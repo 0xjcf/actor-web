@@ -27,9 +27,9 @@
   </defs>
   <rect width="1200" height="1270" fill="#f7f9fb"/>
   <g transform="translate(40,32)">
-    <text class="kicker blue">NORTH-STAR DEMO  /  PROPOSED</text>
+    <text class="kicker blue">LIVE VM DEPLOYMENT  /  PROPOSED AFTER SPRINT 2</text>
     <text y="42" class="title">Two teams. Two VM locations. One dashboard.</text>
-    <text y="70" class="body sub">Today: both tasks run in one in-memory startRuntime example. Below: the opt-in distributed target.</text>
+    <text y="70" class="body sub">Sprint 2 runs three processes on loopback. This proposed deployment adds VM adapters and guest checks; neither VM runs today.</text>
     <rect y="85" width="17" height="13" rx="3" class="runtime"/>
     <text x="25" y="97" class="small">Actor-Web primitive / API</text>
     <rect x="244" y="85" width="17" height="13" rx="3" class="app"/>

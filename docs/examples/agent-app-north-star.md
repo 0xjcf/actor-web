@@ -43,6 +43,12 @@ actors start. It does not decide how they respond.
 
 ### 1. Parallel SDLC Teams: assignments and orchestration
 
+The default demo and the Sprint 1 held-receipt fixture both run in-process.
+The [Sprint 2 loopback demo](#sprint-2-lose-a-process-not-the-task-identity)
+runs the same two task revisions across three Node.js processes on one machine.
+The [local/cloud VM design](../../examples/parallel-sdlc-teams/north-star-architecture.svg)
+is a proposed deployment, not part of the running examples.
+
 Run `pnpm examples:dev:local` from Actor-Web and open
 [Parallel SDLC Teams](http://127.0.0.1:4173/parallel-sdlc-teams/).
 
@@ -77,10 +83,10 @@ settlement of external work.
 
 #### Test to Review: what if the receipt arrives late?
 
-The browser and terminal demos let the **team** accept an in-process check.
-A separate [offline FSM](../../examples/parallel-sdlc-teams/task-check.ts)
-models how a **task owner** would decide whether one already-admitted Test
-attempt can advance to Review when the check runs on a local or cloud VM.
+In the default browser and terminal demos, the **team** accepts the check.
+In the held-receipt and loopback demos, a
+[task-owner state machine](../../examples/parallel-sdlc-teams/task-check.ts)
+decides whether the pinned Test attempt can advance to Review.
 `taskCheckBehavior(admitted)` pins the attempt in actor context and attaches
 an XState machine with `withMachine()`. Its synchronous guards compare receipts
 against that context; they do not perform I/O.
@@ -95,18 +101,9 @@ and starts no session. A later matching receipt updates the live source without
 the reader replaying events. This proves late subscription to a running local
 actor, not recovery after a process restart.
 
-![Test settlement sequence: the host loses its connection after the guest finishes; the task owner holds the attempt until it receives the matching host receipt.](../../examples/parallel-sdlc-teams/task-check-sequence.svg)
-
-Read the diagram from top to bottom. The owner authorizes the team, the team
-opens a Test session, and the specialist requests the check from the executor
-host. The guest reports to the host, not to the task owner. If the host records
-the result but disconnects before delivery, reconnecting means **look up the
-existing receipt**, not **run the check again**. Peer health, session completion
-and dashboard observations cannot advance the task.
-
 | Current state | Event and condition | Next state |
 | --- | --- | --- |
-| `ready` | Owner sends `DISPATCH_CHECK` | `awaitingReceipt` |
+| `ready` | Team asks owner to `DISPATCH_CHECK` | `awaitingReceipt` |
 | `awaitingReceipt` | `RECEIPT_TIMEOUT` names this `attemptId` | `unknown` (hold; no retry) |
 | `awaitingReceipt` or `unknown` | `HOST_RECEIPT` matches; `passed` is `true` | `reviewReady` |
 | `awaitingReceipt` or `unknown` | `HOST_RECEIPT` matches; `passed` is `false` | `checkFailed` |
@@ -135,8 +132,9 @@ Deliver `RECEIPT_TIMEOUT` or `HOST_RECEIPT` through that method. The team
 retains its candidate and forwards the event to its pinned owner. A timeout
 leaves the attempt held; a matching failure ends the lane. Only the owner's
 accepted pass produces the handoff that opens the pinned Review session.
-The team refuses a caller-supplied `START_REVIEW` or a duplicate receipt;
-neither starts work. The owner stays observable until `app.stop()`.
+In this in-memory path, the team refuses a caller-supplied `START_REVIEW`;
+a duplicate receipt cannot start more work. The owner stays observable until
+`app.stop()`.
 The [team tests](../../examples/parallel-sdlc-teams/team-attempt.test.ts)
 drive these deliveries directly, without an executor or receipt store. The
 default demo still checks the label itself and needs no deliveries.
@@ -202,6 +200,8 @@ progress, not authenticated transport, durable recovery or real VM placement.
 
 #### Sprint 2: lose a process, not the task identity
 
+![Loopback topology: the browser reads the control gateway; two authenticated workers check separate candidates. Launcher IPC carries controls, not receipts.](../../examples/parallel-sdlc-teams/loopback-architecture.svg)
+
 Run `pnpm examples:parallel-teams:loopback` and `pnpm examples:dev:local` in
 separate terminals. Open the
 [loopback dashboard](http://127.0.0.1:4173/parallel-sdlc-teams/loopback.html)
@@ -211,14 +211,26 @@ in the **launcher** to look up Checkout. **Reconnect readers** only reads the
 current snapshots. Type `quit` to stop the three nodes and remove the temporary
 run records and viewer file. Stop the examples web server separately.
 
-The two workers dial the control node over authenticated loopback WebSockets.
-The control process keeps its task owners and teams off the peer-addressable
-actor directory. It routes each receipt by the authenticated **source node**
-and compares its full binding before delivering it. The browser uses a separate
-gateway: each credential resolves only its own workspace's progress source,
-with no `send` or `ask`.
+The [topology](../../examples/parallel-sdlc-teams/loopback/topology.ts) has three
+`serveNode` processes. The `local` and `cloud` executor IDs are fixture bindings,
+not locations: both workers run the label check on the same machine.
 
-Recovery uses three distinct facts:
+| Channel | What crosses it | Where authority stops |
+| --- | --- | --- |
+| Launcher → nodes (private IPC) | Configuration and fixture controls such as `begin`, `lookup` and `recover` | The launcher never relays check requests or receipts. |
+| Workers ↔ control (peer WebSockets) | `EXECUTE_CHECK` or `LOOKUP_RECEIPT` out; `HOST_RECEIPT` or `RECEIPT_UNAVAILABLE` back | Each worker dials control using its own peer credential. Control selects the lane from the authenticated **source node**, then compares the full binding. A matching Checkout payload from Profile is refused. |
+| Browser ↔ control (separate gateway) | A `progress` subscription scoped to one workspace per viewer credential | No `send` or `ask`. Reconnecting reads the binding, owner phase, Review count and Document status; it never requests a check or a receipt. |
+
+The [control process](../../examples/parallel-sdlc-teams/loopback/control.ts)
+keeps its allocator, task owners, teams and projection writers in a private
+actor system, outside generic peer routing. Only the task owner settles the
+check. The [worker](../../examples/parallel-sdlc-teams/loopback/worker.ts)
+verifies the candidate bytes and runs its admitted check; it cannot start Review.
+
+![Receipt sequence: worker loss holds Checkout; lookup returns its recorded result, and an accepted pass creates a recoverable Review handoff.](../../examples/parallel-sdlc-teams/task-check-sequence.svg)
+
+The [journals](../../examples/parallel-sdlc-teams/loopback/journal.ts) separate
+three facts that survive a process restart:
 
 - The host claims the attempt **before** checking. It records the execution
   count and receipt independently. A claim alone does not prove the check ran.
@@ -230,14 +242,23 @@ Recovery uses three distinct facts:
   interruption after claiming but before recording completion is not retried
   automatically: the fixture favors avoiding duplicate work.
 
+On restore, an attempt that was awaiting a receipt is treated as `unknown`.
+Recovery looks up the original binding on its connected worker; it does not
+dispatch another check. If the owner already accepted a pass but the team has
+not claimed the handoff, recovery delivers that handoff instead.
+
 Run `pnpm test:examples examples/parallel-sdlc-teams/failure-boundaries.test.ts`
-for the crash and authorization cases. With a recorded receipt, a replacement
-worker answers lookup, and killing the owner after acceptance but before
-handoff delivery still yields one check and one Review. Without a receipt,
-Checkout stays `unknown` at one confirmed check and zero Reviews while Profile
-finishes. The tests inspect the host and team records directly. This is a
-single-writer, local-filesystem process-loss proof: no VMs, live models,
-power-loss guarantees, or isolation from another process with the same OS user.
+to reproduce both outcomes. With the receipt recorded, killing the worker and
+then the control process (after acceptance, before Review) still yields **one
+check and one Review**. When the worker dies after recording execution but
+before storing the receipt, Checkout stays `unknown` at **one check and zero
+Reviews** while Profile finishes. These counts come from host and team records,
+not UI events. The tests also verify that a wrong-host receipt, a cross-workspace
+read and a command on a read-only view leave those records unchanged.
+
+This proves process-loss recovery with single-writer files on one machine. It
+does not establish VM containment, power-loss durability or exactly-once effects
+at arbitrary crash points. Live guest execution requires separate approval.
 
 #### Messages between the task owner, team and executor
 
@@ -248,24 +269,25 @@ not send them.
 
 | Message | Route | Meaning |
 | --- | --- | --- |
-| `EXECUTE_CHECK` | Test session → assigned executor | Run the check identified by the pinned `CheckBinding`, using the admitted task's `expectedLabel`. This is distinct from the owner's local `DISPATCH_CHECK` transition. |
-| `LOOKUP_RECEIPT` | Task owner → assigned executor | Read the existing result for the same binding. Do not run the check, including on a miss. |
-| `HOST_RECEIPT` / `RECEIPT_UNAVAILABLE` | Executor → task owner | Return the existing FSM receipt unchanged, or identify the requested binding with no result. Unavailable does not mean `passed: false` and cannot advance the task. |
-| `START_REVIEW` | Task owner → pinned team | Hand off an accepted check to the team. `reviewHandoff()` takes the owner's `reviewReady` decision, not an executor's claim that the check passed. |
+| `EXECUTE_CHECK` | Control → assigned worker | Run the Test session's prepared request against the admitted `expectedLabel`. This is distinct from the owner's local `DISPATCH_CHECK` transition. |
+| `LOOKUP_RECEIPT` | Control → assigned worker | Read the existing result for the original binding. A miss never executes the check. |
+| `HOST_RECEIPT` / `RECEIPT_UNAVAILABLE` | Worker → control | Control admits the source and binding, then delivers the receipt or a timeout through the team to the owner. Unavailable is not `passed: false`. |
+| `START_REVIEW` | Within control → pinned team | Deliver the saved handoff derived from the owner's `reviewReady` decision. Neither worker nor browser can send it to the team. |
 
 The artifact reference is the pair `(workspaceId, candidateDigest)` already in
 `CheckBinding`. For this label fixture the bytes are the UTF-8 candidate label,
 without an added newline. `pinCandidate()` hashes those bytes with SHA-256; the
-executor resolves the reference in the admitted workspace and verifies the bytes
-with `matchesCandidateBytes()` before checking. No host path or executable
-callback crosses the boundary.
+loopback control sends the candidate label alongside `EXECUTE_CHECK`. The
+worker encodes it as UTF-8 and verifies the digest with `matchesCandidateBytes()`
+before claiming the check. `LOOKUP_RECEIPT` carries no label. No host path or
+executable callback crosses the boundary.
 
 Dispatch, lookup and handoff carry `teamId` and the originating `testSessionId`
 for tracing. The handoff ID is stable for the destination team and complete
 check binding, including the executor generation. Redelivery must reuse this
 ID; a new Test trace alone must not authorize another Review. The ID is not a
-credential: authenticating the host and remembering which handoffs were
-processed are separate integration tasks.
+credential. Sprint 2 authenticates the host at the peer boundary and records
+which handoff the team claimed in its control-side checkpoint.
 
 ### 2. Portable Specialist: one bounded session
 

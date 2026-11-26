@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1030" viewBox="0 0 1200 1030" role="img" aria-labelledby="title desc">
   <title id="title">Who can advance a task from Test to Review?</title>
-  <desc id="desc">Time runs down the page. For one pinned Test attempt, the task actor authorizes the team; its specialist asks the executor host to run a bounded guest check. The guest reports to its host. The host records the receipt but disconnects before delivering it. On receipt timeout, the task actor holds the attempt as unknown. Reconnection permits reading the existing receipt, not dispatching another check. A matching host receipt, on time or late, moves the task to reviewReady for a pass or checkFailed for a failure. Stale or malformed evidence leaves the state unchanged. A dashboard observes but cannot advance the task. Only the task actor’s decision is modeled in the offline example; the VM messages are proposed.</desc>
+  <desc id="desc">Time runs down the page. Control sends the pinned Test request to the assigned worker. The worker verifies the bytes, claims and runs the check, then records a receipt. Losing the worker before delivery puts the owner on hold. After reconnection, lookup reads the original receipt. Control verifies its origin and binding before the team forwards it to the owner. An accepted pass and its pending Review handoff are checkpointed together. After a control restart the team can claim an unclaimed handoff and start Review. A missing receipt or a dashboard reconnect never starts work.</desc>
   <defs>
     <style>
       text { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; fill: #15263d; }
@@ -23,9 +23,9 @@
     </marker>
   </defs>
   <rect width="1200" height="1030" fill="#f7f9fb"/>
-  <text x="40" y="38" class="kicker">NORTH-STAR SEQUENCE  /  ONE TEST ATTEMPT  /  LOCAL OR CLOUD</text>
+  <text x="40" y="38" class="kicker">SPRINT 2  /  ONE CHECKOUT ATTEMPT  /  LOOPBACK</text>
   <text x="40" y="83" class="title">Who can advance a task from Test to Review?</text>
-  <text x="40" y="114" class="body">Only the task owner accepts the receipt. The other lanes show the proposed VM protocol, not a live deployment.</text>
+  <text x="40" y="114" class="body">The worker checks the bytes. The task owner decides whether Review may start. The team starts the session.</text>
 
   <rect x="40" y="143" width="1120" height="60" rx="9" class="panel"/>
   <text x="56" y="168" class="heading">What is pinned before dispatch?</text>
@@ -37,43 +37,45 @@
     <rect x="257" y="228" width="162" height="52" rx="8" class="panel"/>
     <text x="338" y="260" class="heading">Team</text>
     <rect x="464" y="228" width="176" height="52" rx="8" class="panel"/>
-    <text x="552" y="260" class="heading">Test specialist</text>
+    <text x="552" y="260" class="heading">Control adapter</text>
     <rect x="711" y="228" width="211" height="52" rx="8" class="host"/>
-    <text x="816" y="260" class="heading">Trusted executor host</text>
+    <text x="816" y="260" class="heading">Worker adapter</text>
     <rect x="982" y="228" width="178" height="52" rx="8" class="host"/>
-    <text x="1071" y="260" class="heading">Guest VM</text>
+    <text x="1071" y="260" class="heading">Executor actor</text>
   </g>
   <path class="line" d="M126 280 V752 M338 280 V752 M552 280 V752 M816 280 V752 M1071 280 V752"/>
 
-  <text x="143" y="306" class="body">Authorize pinned attempt</text>
-  <path class="send" d="M126 317 H336"/>
-  <text x="355" y="344" class="body">Start fresh session</text>
-  <path class="send" d="M338 355 H550"/>
-  <text x="568" y="382" class="body">Request the pinned check</text>
+  <text x="146" y="306" class="body">DISPATCH_CHECK</text>
+  <path class="send" d="M338 317 H128"/>
+  <text x="355" y="344" class="body">Test request ready; session closed</text>
+  <path class="return" d="M338 355 H550"/>
+  <text x="568" y="382" class="body">EXECUTE_CHECK + candidate label</text>
   <path class="send" d="M552 393 H814"/>
-  <text x="834" y="420" class="body">Run bounded check</text>
+  <text x="834" y="420" class="body">Verify digest; claim, then execute</text>
   <path class="send" d="M816 431 H1069"/>
-  <text x="834" y="458" class="body">Return check result</text>
+  <text x="834" y="458" class="body">Return bound result</text>
   <path class="return" d="M1071 469 H818"/>
 
   <rect x="676" y="487" width="484" height="60" rx="8" class="host"/>
   <text x="692" y="512" class="heading">Host records receipt; connection drops.</text>
-  <text x="692" y="535" class="small">The guest finished. The task has not received proof.</text>
+  <text x="692" y="535" class="small">The check ran. The owner has not received its outcome.</text>
   <rect x="40" y="552" width="568" height="66" rx="8" class="app"/>
   <text x="56" y="578" class="code">RECEIPT_TIMEOUT → unknown</text>
   <text x="56" y="602" class="body">Hold this attempt. Neither retry nor dispatch Review.</text>
-  <text x="157" y="650" class="body">After reconnection: look up the existing receipt for this attempt. Do not run the check again.</text>
-  <path class="send" d="M126 662 H814"/>
-  <text x="157" y="703" class="body">HOST_RECEIPT · verified host channel → task owner</text>
-  <path class="return" d="M816 716 H128"/>
-  <text x="157" y="743" class="small">Without a disconnect, the same receipt can settle the check directly from awaitingReceipt.</text>
+  <text x="568" y="650" class="body">LOOKUP_RECEIPT after reconnect</text>
+  <path class="send" d="M552 662 H814"/>
+  <text x="568" y="695" class="body">HOST_RECEIPT or RECEIPT_UNAVAILABLE</text>
+  <path class="return" d="M816 706 H554"/>
+  <text x="144" y="736" class="body">Admit by source and binding; team asks owner to settle.</text>
+  <path class="send" d="M552 748 H340"/>
+  <path class="send" d="M338 748 H128"/>
 
   <g transform="translate(40,793)">
     <text class="kicker">TASK DECISION  /  SAME RULE FOR ON-TIME AND LATE EVIDENCE</text>
     <rect y="16" width="353" height="105" rx="9" class="app"/>
     <text x="16" y="44" class="heading">Match + pass</text>
     <text x="16" y="70" class="code">→ reviewReady</text>
-    <text x="16" y="99" class="body">May dispatch Review, once.</text>
+    <text x="16" y="99" class="body">Save decision + pending START_REVIEW.</text>
     <rect x="369" y="16" width="353" height="105" rx="9" class="app"/>
     <text x="385" y="44" class="heading">Match + fail</text>
     <text x="385" y="70" class="code">→ checkFailed</text>
@@ -83,6 +85,6 @@
     <text x="754" y="70" class="code">→ no transition</text>
     <text x="754" y="99" class="body">Keep waiting or stay unknown; do not retry.</text>
   </g>
-  <text x="40" y="953" class="body">The dashboard observes the decision. Peer health, guest output and specialist progress are not settlement events.</text>
-  <text x="40" y="982" class="small">Offline model: task-check.ts · Receipt authentication, durable storage, reconciliation I/O and Review dispatch belong to future adapters.</text>
+  <text x="40" y="953" class="body">Control restart before handoff: restore the accepted decision. The team claims the saved handoff before spawning Review.</text>
+  <text x="40" y="982" class="small">Lookup miss: stay unknown. No second execution. Dashboard reconnect: read the current projection. No new session.</text>
 </svg>

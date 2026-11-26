@@ -92,6 +92,7 @@ outgoing system message, assignment, and tool descriptions without a live model.
 ## 📖 Current Runtime Docs
 
 - [API reference](./docs/API.md) documents the public runtime surface, including the runtime gateway API.
+- [Parallel SDLC Teams: loopback architecture](./docs/examples/agent-app-north-star.md#sprint-2-lose-a-process-not-the-task-identity) shows how the control node recovers a worker's receipt after process loss, while the dashboard remains read-only.
 - [Ignite host bridge example](./docs/examples/ignite-element-host.md) shows how Ignite consumes Actor-Web snapshots and emitted events from local refs or remote projection refs.
 - [External transport roadmap](./docs/spikes/actor-web-external-transport-design.md) separates what is proven today from the remaining production multi-machine transport work.
 

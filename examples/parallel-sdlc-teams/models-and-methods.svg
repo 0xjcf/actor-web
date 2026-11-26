@@ -26,7 +26,7 @@
   </defs>
   <rect width="1200" height="1300" fill="#f7f9fb"/>
   <g transform="translate(40,37)">
-    <text class="kicker blue">PARALLEL SDLC TEAMS  /  IMPLEMENTED EXAMPLE</text>
+    <text class="kicker blue">PARALLEL SDLC TEAMS  /  DEFAULT IN-PROCESS DEMO</text>
     <text y="45" class="title">From a pinned role to an accepted fact</text>
     <text y="76" class="body">A role definition is versioned data, not a language model. Both teams run on one in-memory node, with no LLM or VM.</text>
   </g>
