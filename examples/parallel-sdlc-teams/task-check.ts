@@ -17,10 +17,8 @@ export type CheckBinding = Readonly<
 
 export type HostReceipt = CheckBinding & { passed: boolean };
 export type ReceiptEvent = { type: 'HOST_RECEIPT'; receipt: HostReceipt };
-type Event =
-  | { type: 'DISPATCH_CHECK' } // owner-local, directed to this single-use actor
-  | { type: 'RECEIPT_TIMEOUT'; attemptId: string }
-  | ReceiptEvent;
+export type ReceiptSignal = { type: 'RECEIPT_TIMEOUT'; attemptId: string } | ReceiptEvent;
+type Event = { type: 'DISPATCH_CHECK' } | ReceiptSignal;
 type State = 'ready' | 'awaitingReceipt' | 'unknown' | 'reviewReady' | 'checkFailed';
 export type TaskCheckReply = { value: State; context: CheckBinding } | ActorTransitionErrorValue;
 

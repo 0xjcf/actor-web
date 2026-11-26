@@ -120,10 +120,26 @@ the current state returns `INVALID_TRANSITION` on `ask()` and leaves the state
 unchanged. Both outcomes are terminal for this attempt, so a duplicate receipt
 cannot settle it twice.
 
-Only the owner's decision runs in this fixture. Matching fields is not sender
-authentication: a future adapter must authenticate the executor, store and
-retrieve its receipt, and deliver it to the owner. `reviewReady` means Review
-is permitted; the FSM neither starts a reviewer nor launches a VM.
+`reviewReady` means Review is permitted; the owner FSM itself neither starts a
+reviewer nor launches a VM. Matching fields is not sender authentication.
+
+**Opt-in team handoff (NS-04).** Instead of `app.runTeam(address)`, call
+`app.beginAttempt(address, { workspaceId, executorId, executorGeneration })`
+on an allocated team. It runs Plan and Build, pins the actual label bytes,
+and opens a single Test session to prepare `EXECUTE_CHECK`. That session
+closes and the call returns **before** a receipt exists. The successful result
+contains the candidate, the execution request, the task owner's address for
+observation, and a local `deliver(event)` method.
+
+Deliver `RECEIPT_TIMEOUT` or `HOST_RECEIPT` through that method. The team
+retains its candidate and forwards the event to its pinned owner. A timeout
+leaves the attempt held; a matching failure ends the lane. Only the owner's
+accepted pass produces the handoff that opens the pinned Review session.
+The team refuses a caller-supplied `START_REVIEW` or a duplicate receipt;
+neither starts work. The owner stays observable until `app.stop()`.
+The [team tests](../../examples/parallel-sdlc-teams/team-attempt.test.ts)
+drive these deliveries directly, without an executor or receipt store. The
+default demo still checks the label itself and needs no deliveries.
 
 Run the [transition tests](../../examples/parallel-sdlc-teams/task-check.test.ts)
 from the repository root, without a VM or credentials:
