@@ -122,6 +122,40 @@ from the repository root, without a VM or credentials:
 pnpm exec vitest run --config examples/vitest.config.ts examples/parallel-sdlc-teams/task-check.test.ts
 ```
 
+#### Sprint 1 acceptance: one held receipt, two independent teams
+
+This is the acceptance scenario for the **planned offline integration**, not a
+claim about the current demo. Use two in-memory executors and scripted roles.
+Count checks at the executor when the check actually runs; count Review
+sessions at the team when it spawns a reviewer. Record both per task and
+attempt. Receipt deliveries, observer events and UI renders are not executions.
+
+1. Start `checkout@3` (local fixture, `reviewer@1`) and `profile@1` (cloud
+   fixture, `reviewer@2`). Use a barrier to establish overlap: both teams must
+   have started before either can finish.
+2. Let Checkout execute and store a passing receipt. Withhold **delivery**,
+   not execution. Signal the timeout for that attempt and keep the receipt held
+   until Profile has reached Document. Checkout must still be `unknown`.
+3. Open a fresh read-only dashboard. Its initial snapshot must show the held
+   Checkout and completed Profile without issuing commands or changing counts.
+   Deliver Profile's receipt and then a receipt from an older executor generation
+   to Checkout. Neither may release it.
+4. Look up Checkout's original receipt without executing the check. Deliver it,
+   let Checkout reach Document, then deliver it again. The duplicate must not
+   open a second Review session.
+
+| Checkpoint | Checkout: checks / Review sessions | Profile: checks / Review sessions |
+| --- | --- | --- |
+| Profile finished; Checkout receipt still held | 1 / 0 | 1 / 1 |
+| After dashboard mount and both refused receipts | 1 / 0 | 1 / 1 |
+| After original receipt and duplicate | 1 / 1 | 1 / 1 |
+
+**Negative control (fresh run):** inject the wrong Checkout label. Deliver its
+matching failed receipt: Checkout must settle as `checkFailed`, with one check,
+zero Review sessions and no Document. Profile must still reach Document. Keep
+the [existing team test](../../examples/parallel-sdlc-teams/teams.test.ts)
+green: in the default demo the same wrong label returns `CHECK_FAILED`.
+
 ### 2. Portable Specialist: one bounded session
 
 After building the workspace packages with `pnpm build`, run
