@@ -150,11 +150,20 @@ pnpm exec vitest run --config examples/vitest.config.ts examples/parallel-sdlc-t
 
 #### Sprint 1 acceptance: one held receipt, two independent teams
 
-This is the acceptance scenario for the **planned offline integration**, not a
-claim about the current demo. Use two in-memory executors and scripted roles.
-Count checks at the executor when the check actually runs; count Review
-sessions at the team when it spawns a reviewer. Record both per task and
-attempt. Receipt deliveries, observer events and UI renders are not executions.
+Run `pnpm examples:dev:local` and open the
+[held-receipt dashboard](http://127.0.0.1:4173/parallel-sdlc-teams/held-receipt.html).
+**Start a fresh run** opens the dashboard after Checkout times out and Profile
+finishes. **Look up and deliver** releases Checkout's stored receipt; click
+again to try a duplicate. Enable **Wrong Checkout label** before a fresh run
+for the failure case. The original five-stage demo remains the default.
+
+The [NS-05 fixture](../../examples/parallel-sdlc-teams/receipt-fixture.ts)
+uses two in-process executor actors and scripted roles. Each executor holds
+one admitted binding, a private copy of the candidate bytes and a receipt slot.
+Lookup never runs the check, even on a miss. The dashboard reads each owner's
+current decision, the executor's execution count, and the team's Review spawn
+count and Document fact. It receives no command handles. These measurements
+are for one task and attempt, not counts of deliveries or UI events.
 
 1. Start `checkout@3` (local fixture, `reviewer@1`) and `profile@1` (cloud
    fixture, `reviewer@2`). Use a barrier to establish overlap: both teams must
@@ -181,6 +190,15 @@ matching failed receipt: Checkout must settle as `checkFailed`, with one check,
 zero Review sessions and no Document. Profile must still reach Document. Keep
 the [existing team test](../../examples/parallel-sdlc-teams/teams.test.ts)
 green: in the default demo the same wrong label returns `CHECK_FAILED`.
+
+To reproduce the positive, negative and executor-isolation checks headlessly:
+
+```sh
+pnpm exec vitest run --config examples/vitest.config.ts examples/parallel-sdlc-teams/receipt-fixture.test.ts
+```
+
+All actors and receipts here live in one process. This demonstrates independent
+progress, not authenticated transport, durable recovery or real VM placement.
 
 #### Messages between the task owner, team and executor
 

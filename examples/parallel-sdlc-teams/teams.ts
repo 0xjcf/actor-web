@@ -60,12 +60,10 @@ function teamBehavior(
   assignment: Assignment,
   runId: string,
   review: ReviewAdvisor,
-  reportStage: StageObserver,
-  paceStage: TeamOptions['paceStage']
+  sessions: ReturnType<typeof stageSessions>
 ) {
   const { task, team } = assignment;
   const identity: TaskRevision = { taskId: task.id, taskRevision: task.revision };
-  const sessions = stageSessions(system, assignment, runId, reportStage, paceStage);
   const { step, records: stages } = sessions;
   const finish = <T>(reply: Result<T>) => ({ context: { used: true, pending: null }, reply });
 
@@ -178,7 +176,7 @@ export async function startTeams({
   paceStage,
 }: TeamOptions = {}) {
   const admittedTasks = new Set<string>();
-  const readyTeams = new Set<ActorAddress>();
+  const readyTeams = new Map<ActorAddress, ReturnType<typeof stageSessions>['snapshot']>();
   // One-way, detached projection; observer errors and mutations cannot affect stage acceptance.
   const reportStage: StageObserver = (progress) => {
     if (!observeStage) return;
@@ -193,12 +191,13 @@ export async function startTeams({
     const { task } = assignment.value;
     if (admittedTasks.has(task.id)) return { reply: refuse('TASK_ALREADY_ASSIGNED') };
     const runId = crypto.randomUUID();
+    const sessions = stageSessions(system, assignment.value, runId, reportStage, paceStage);
     const ref = await system.spawn(
-      teamBehavior(system, assignment.value, runId, review, reportStage, paceStage),
+      teamBehavior(system, assignment.value, runId, review, sessions),
       { id: runId, supervision: { strategy: 'stop' } }
     );
     admittedTasks.add(task.id);
-    readyTeams.add(ref.address);
+    readyTeams.set(ref.address, sessions.snapshot);
     const allocated: AllocatedTeam = {
       address: ref.address,
       assignment: structuredClone(assignment.value),
@@ -226,7 +225,9 @@ export async function startTeams({
       allocator.ask<Result<AllocatedTeam>>({ type: 'ALLOCATE_TEAM', task, roster }),
     async beginAttempt(address: ActorAddress, target: CheckTarget, injectWrongCandidate = false) {
       if (!validTarget(target)) return refuse('INVALID_CHECK_TARGET');
-      if (!readyTeams.delete(address)) return refuse('NOT_A_READY_TEAM');
+      const readStages = readyTeams.get(address);
+      if (!readStages) return refuse('NOT_A_READY_TEAM');
+      readyTeams.delete(address);
       const team = await system.lookup(address);
       if (!team) return refuse('TEAM_NOT_FOUND');
       const opened = await team.ask<Result<OpenAttempt>>(
@@ -237,6 +238,7 @@ export async function startTeams({
       // Local host capability, not part of the serializable executor request.
       return ok({
         ...opened.value,
+        readStages,
         deliver: (event: ReceiptSignal) => team.ask<Result<Delivery>>(event, 15_000),
       });
     },

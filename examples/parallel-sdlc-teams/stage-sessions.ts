@@ -29,6 +29,7 @@ export function stageSessions(
 ) {
   const identity = { taskId: task.id, taskRevision: task.revision };
   const records: StageRecord[] = [];
+  let reviewSessions = 0;
 
   async function run<T>(role: Role, work: (sessionId: string) => T | Promise<T>) {
     const behavior = defineBehavior<{ type: 'RUN_STAGE' }>()
@@ -48,6 +49,7 @@ export function stageSessions(
       id: `${runId}-${role}`,
       supervision: { strategy: 'stop' },
     });
+    if (role === 'review') reviewSessions++;
     const { id, revision } = team[role];
     const stage = { role, definition: { id, revision }, sessionAddress: session.address };
     observe({ ...identity, ...stage, status: 'running' });
@@ -78,5 +80,9 @@ export function stageSessions(
     return settle(stage, result.ok ? accept(result.value) : result);
   }
 
-  return { run, settle, step, records };
+  const snapshot = () => ({
+    reviewSessions,
+    documented: records.some((stage) => stage.fact.kind === 'document'),
+  });
+  return { run, settle, step, records, snapshot };
 }

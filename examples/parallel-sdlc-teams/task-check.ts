@@ -22,7 +22,7 @@ type Event = { type: 'DISPATCH_CHECK' } | ReceiptSignal;
 type State = 'ready' | 'awaitingReceipt' | 'unknown' | 'reviewReady' | 'checkFailed';
 export type TaskCheckReply = { value: State; context: CheckBinding } | ActorTransitionErrorValue;
 
-function matchesBinding(expected: CheckBinding, offered: CheckBinding): boolean {
+export function matchesBinding(expected: CheckBinding, offered: CheckBinding): boolean {
   return (
     offered?.taskId === expected.taskId &&
     offered.taskRevision === expected.taskRevision &&
