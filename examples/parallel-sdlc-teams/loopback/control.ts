@@ -18,7 +18,8 @@ async function openLane(
   app: Awaited<ReturnType<typeof startTeams>>,
   team: AllocatedTeam | undefined,
   lane: Lane,
-  journal: TeamRecovery
+  journal: TeamRecovery,
+  deferReview: boolean
 ) {
   async function open() {
     const saved = journal.load();
@@ -58,7 +59,7 @@ async function openLane(
     async deliver(signal: ReceiptSignal) {
       await attempt.deliver(signal);
       await view.ask({ type: 'REFRESH' });
-      await flush();
+      if (!deferReview) await flush();
     },
   };
 }
@@ -80,10 +81,15 @@ export async function startControl(config: ControlConfig) {
     },
   });
   const sources = new Map<Lane, RuntimeGatewayReadModelSource>();
+  let onDisconnect: ((source: string) => void) | undefined;
   const node = await serveNode<typeof topology, Lane>(topology, {
     node: 'control',
     transport: {
-      listen: { host: '127.0.0.1', port: 0 },
+      listen: { host: '127.0.0.1', port: config.ports?.transport ?? 0 },
+      telemetry(event) {
+        if (event.type === 'peer.disconnected' && event.peerNodeAddress)
+          onDisconnect?.(event.peerNodeAddress);
+      },
       auth: peerAuth(
         config.token,
         new Map(lanes.map((lane) => [address(lane), config.peers[lane]]))
@@ -91,7 +97,7 @@ export async function startControl(config: ControlConfig) {
     },
     gateway: {
       host: '127.0.0.1',
-      port: 0,
+      port: config.ports?.gateway ?? 0,
       expose: [],
       auth: {
         verifyToken({ token }) {
@@ -112,12 +118,28 @@ export async function startControl(config: ControlConfig) {
       ? undefined
       : await allocateDemoTeams(app, publishDemoDefinitions(app.registry));
     const [checkout, profile] = await Promise.all([
-      openLane(app, teams?.[0], 'checkout', journals.checkout),
-      openLane(app, teams?.[1], 'profile', journals.profile),
+      openLane(app, teams?.[0], 'checkout', journals.checkout, config.deferReview === 'checkout'),
+      openLane(app, teams?.[1], 'profile', journals.profile, config.deferReview === 'profile'),
     ]);
     const runs = { checkout, profile };
     for (const lane of lanes) sources.set(lane, runs[lane].source);
     const queues = { checkout: Promise.resolve(), profile: Promise.resolve() };
+    const unavailable = { checkout: 0, profile: 0 };
+    let started = restoring;
+    const timeout = (lane: Lane) =>
+      runs[lane].deliver({
+        type: 'RECEIPT_TIMEOUT',
+        attemptId: runs[lane].attempt.execute.binding.attemptId,
+      });
+    onDisconnect = (source) => {
+      const lane = lanes.find((key) => address(key) === source);
+      // A lost link can put pending work on hold. It cannot settle the check.
+      if (started && lane && runs[lane].progress().ownerPhase === 'awaitingReceipt')
+        queues[lane] = queues[lane]
+          .then(() => timeout(lane))
+          .catch(() => console.error('Could not record peer loss'));
+    };
+    let refusedBindings = 0;
     const unsubscribe = node.transport.subscribe(({ source, message }) => {
       if (message.type !== 'HOST_RECEIPT' && message.type !== 'RECEIPT_UNAVAILABLE') return;
       const lane = lanes.find((key) => source === address(key));
@@ -125,7 +147,11 @@ export async function startControl(config: ControlConfig) {
       const reply = message as ReceiptLookupReply;
       const { attempt, deliver } = runs[lane];
       const binding = reply.type === 'HOST_RECEIPT' ? reply.receipt : reply.binding;
-      if (!matchesBinding(attempt.execute.binding, binding)) return;
+      if (!matchesBinding(attempt.execute.binding, binding)) {
+        refusedBindings++;
+        return;
+      }
+      if (reply.type === 'RECEIPT_UNAVAILABLE') unavailable[lane]++;
       queues[lane] = queues[lane]
         .then(() =>
           deliver(
@@ -136,7 +162,6 @@ export async function startControl(config: ControlConfig) {
         )
         .catch(() => console.error('Control could not settle check response'));
     });
-    let started = restoring;
     async function lookup(lane: Lane) {
       const { trace, binding } = runs[lane].attempt.execute;
       const request = { type: 'LOOKUP_RECEIPT', trace, binding } as const;
@@ -156,11 +181,7 @@ export async function startControl(config: ControlConfig) {
           })
         );
       },
-      timeout: (lane: Lane) =>
-        runs[lane].deliver({
-          type: 'RECEIPT_TIMEOUT',
-          attemptId: runs[lane].attempt.execute.binding.attemptId,
-        }),
+      timeout,
       lookup,
       async recover() {
         if (!restoring) return;
@@ -176,7 +197,9 @@ export async function startControl(config: ControlConfig) {
         );
       },
       stats: () => ({ checkout: checkout.progress(), profile: profile.progress() }),
+      health: () => ({ peers: node.transport.getConnectedNodes(), refusedBindings, unavailable }),
       async stop() {
+        onDisconnect = undefined;
         unsubscribe();
         await Promise.all(Object.values(queues));
         await node.stop();

@@ -48,6 +48,7 @@ export async function startWorker(config: WorkerConfig) {
         const result = await slot.execute(request);
         if (!result.ok) return;
         journal.executed(slot.executions());
+        if (config.deferReceipt) return;
         journal.store(result.value.receipt);
       }
       if (role === 'checkout') return;
@@ -64,6 +65,7 @@ export async function startWorker(config: WorkerConfig) {
   });
   return {
     stats: () => ({ executions: journal.executions() }),
+    reconnect: () => node.transport.connect(control),
     async stop() {
       unsubscribe();
       await mailbox;

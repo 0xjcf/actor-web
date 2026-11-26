@@ -3,7 +3,15 @@ import type { ControlConfig, WorkerConfig } from './peer.js';
 import type { Lane } from './topology.js';
 import { startWorker } from './worker.js';
 
-export type Operation = 'begin' | 'recover' | 'timeout' | 'lookup' | 'stats' | 'stop';
+export type Operation =
+  | 'begin'
+  | 'recover'
+  | 'reconnect'
+  | 'timeout'
+  | 'lookup'
+  | 'health'
+  | 'stats'
+  | 'stop';
 type Command = { id: number; op: Operation; lane?: Lane };
 
 // Private launcher IPC: configuration, fixture controls and evidence queries only.
@@ -25,6 +33,8 @@ process.once('message', async (config: ControlConfig | WorkerConfig) => {
         }
         let value: unknown;
         if (op === 'stats') value = service.stats();
+        else if (op === 'health' && 'health' in service) value = service.health();
+        else if (op === 'reconnect' && 'reconnect' in service) await service.reconnect();
         else if ('begin' in service) {
           if (op === 'begin') await service.begin();
           else if (op === 'recover') await service.recover();

@@ -200,6 +200,45 @@ pnpm exec vitest run --config examples/vitest.config.ts examples/parallel-sdlc-t
 All actors and receipts here live in one process. This demonstrates independent
 progress, not authenticated transport, durable recovery or real VM placement.
 
+#### Sprint 2: lose a process, not the task identity
+
+Run `pnpm examples:parallel-teams:loopback` and `pnpm examples:dev:local` in
+separate terminals. Open the
+[loopback dashboard](http://127.0.0.1:4173/parallel-sdlc-teams/loopback.html)
+and select the private viewer file named by the launcher. It contains the two
+read credentials, not peer credentials. Do not share or commit it. Press Enter
+in the **launcher** to look up Checkout. **Reconnect readers** only reads the
+current snapshots. Type `quit` to stop the three nodes and remove the temporary
+run records and viewer file. Stop the examples web server separately.
+
+The two workers dial the control node over authenticated loopback WebSockets.
+The control process keeps its task owners and teams off the peer-addressable
+actor directory. It routes each receipt by the authenticated **source node**
+and compares its full binding before delivering it. The browser uses a separate
+gateway: each credential resolves only its own workspace's progress source,
+with no `send` or `ask`.
+
+Recovery uses three distinct facts:
+
+- The host claims the attempt **before** checking. It records the execution
+  count and receipt independently. A claim alone does not prove the check ran.
+  Lookup reads a stored receipt or returns unavailable; it never executes.
+- The owner saves the accepted decision and pending Review handoff in one
+  checkpoint with the original candidate, attempt, and pinned team.
+- The team claims that handoff before spawning Review. The Review count is
+  recorded at spawn, and Document is proved by the stage record. An
+  interruption after claiming but before recording completion is not retried
+  automatically: the fixture favors avoiding duplicate work.
+
+Run `pnpm test:examples examples/parallel-sdlc-teams/failure-boundaries.test.ts`
+for the crash and authorization cases. With a recorded receipt, a replacement
+worker answers lookup, and killing the owner after acceptance but before
+handoff delivery still yields one check and one Review. Without a receipt,
+Checkout stays `unknown` at one confirmed check and zero Reviews while Profile
+finishes. The tests inspect the host and team records directly. This is a
+single-writer, local-filesystem process-loss proof: no VMs, live models,
+power-loss guarantees, or isolation from another process with the same OS user.
+
 #### Messages between the task owner, team and executor
 
 The [NS-02 contract](../../examples/parallel-sdlc-teams/check-protocol.ts)

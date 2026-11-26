@@ -65,6 +65,10 @@ export async function launch(config: ControlConfig | WorkerConfig) {
     const ready = await wait<Ready>(0);
     return {
       ready,
+      async crash() {
+        child.kill('SIGKILL');
+        await closed;
+      },
       call<T = unknown>(op: Operation, lane?: Lane) {
         if (!child.connected) throw new Error(`${config.role} exited`);
         const id = ++sequence;

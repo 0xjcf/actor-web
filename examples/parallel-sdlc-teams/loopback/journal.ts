@@ -46,7 +46,8 @@ export function hostJournal(directory: string) {
   const receipt = record<HostReceipt>(directory, 'receipt.json');
   return {
     claim: (binding: CheckBinding) => claim.write(binding, true),
-    executed: (executions: number) => count.write(executions, true),
+    // Count the work returned by each actual executor, not winning claims or replies.
+    executed: (executions: number) => count.write((count.read() ?? 0) + executions),
     store: (value: HostReceipt) => receipt.write(value, true),
     executions: () => count.read() ?? (claim.read() ? null : 0),
     lookup(binding: CheckBinding): ReceiptLookupReply {

@@ -26,6 +26,9 @@ export function peerAuth(
 
 export type CheckPacket = ExecuteCheck & { label: string };
 export type ControlConfig = {
+  // Fixture-only cut after committing the decision, before handing it to the team.
+  deferReview?: Lane;
+  ports?: { transport: number; gateway: number };
   directory: string;
   role: 'control';
   token: string;
@@ -33,6 +36,8 @@ export type ControlConfig = {
   viewers: Record<Lane, string>;
 };
 export type WorkerConfig = {
+  // Fixture-only cut after checking the bytes, before storing an outcome.
+  deferReceipt?: boolean;
   directory: string;
   role: Lane;
   token: string;
