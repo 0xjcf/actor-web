@@ -1,5 +1,11 @@
 # @actor-web/labs-mesh
 
+## 0.1.2
+
+### Patch Changes
+
+- Update the runtime dependency to `@actor-web/runtime@0.4.0`. No mesh API changes.
+
 ## 0.1.1
 
 ### Patch Changes

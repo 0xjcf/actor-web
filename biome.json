@@ -70,6 +70,12 @@
   },
   "overrides": [
     {
+      "includes": ["examples/retail-investigation/evals/*-live.json"],
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
       "includes": ["packages/actor-core-runtime/src/**/*.ts"],
       "linter": {
         "rules": {

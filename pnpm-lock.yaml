@@ -57,6 +57,9 @@ importers:
       ws:
         specifier: ^8.18.3
         version: 8.18.3
+      xstate:
+        specifier: 5.30.0
+        version: 5.30.0
 
   docs/site:
     devDependencies:
@@ -80,6 +83,30 @@ importers:
         version: 3.5.35(typescript@5.8.3)
 
   examples/portable-specialist:
+    dependencies:
+      '@actor-web/agent':
+        specifier: workspace:*
+        version: link:../../packages/actor-agent
+      '@actor-web/runtime':
+        specifier: workspace:*
+        version: link:../../packages/actor-core-runtime
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+
+  examples/retail-analyst:
+    dependencies:
+      '@actor-web/agent':
+        specifier: workspace:*
+        version: link:../../packages/actor-agent
+      '@actor-web/runtime':
+        specifier: workspace:*
+        version: link:../../packages/actor-core-runtime
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+
+  examples/retail-investigation:
     dependencies:
       '@actor-web/agent':
         specifier: workspace:*

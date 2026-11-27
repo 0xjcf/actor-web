@@ -1,0 +1,87 @@
+{
+  "exactPass": "Accepted and correct host numeric facts, fixture status, and exact finding set; prose is not scored.",
+  "modes": {
+    "live": {
+      "archive": "20261125T191919Z-synthesis-live.json.gz",
+      "sha256": "c94f46da7d96b7677b6e61dc1c61cdb2f049465ed5c8f5e966747a1df59e981a",
+      "bounds": {
+        "maxCalls": 8,
+        "maxReadsPerAssignment": 3,
+        "retries": 0
+      },
+      "model": {
+        "provider": "openai",
+        "model": "gpt-4.1-mini",
+        "settings": {
+          "status": "captured",
+          "value": {
+            "temperature": 0,
+            "max_completion_tokens": 900,
+            "parallelToolCalls": false
+          }
+        }
+      },
+      "arms": {
+        "rule-only": {
+          "attempts": 4,
+          "accepted": 4,
+          "exact": 2,
+          "normalFalseWeather": 2,
+          "wetWeatherRetained": 2,
+          "calls": 4,
+          "inputTokens": 4220,
+          "outputTokens": 960
+        },
+        "one-shot": {
+          "attempts": 4,
+          "accepted": 4,
+          "exact": 2,
+          "normalFalseWeather": 2,
+          "wetWeatherRetained": 2,
+          "calls": 4,
+          "inputTokens": 4748,
+          "outputTokens": 726
+        }
+      }
+    },
+    "scripted": {
+      "archive": "20261125T191844Z-synthesis-scripted.json.gz",
+      "sha256": "750070f4777c74421b4d4fa5dd1460b385bc4b361c99af7260d85c0a998cde65",
+      "bounds": {
+        "maxCalls": 8,
+        "maxReadsPerAssignment": 3,
+        "retries": 0
+      },
+      "model": {
+        "provider": "scripted",
+        "model": "observation-driven-rules",
+        "settings": {
+          "status": "captured",
+          "value": {}
+        }
+      },
+      "arms": {
+        "rule-only": {
+          "attempts": 4,
+          "accepted": 4,
+          "exact": 4,
+          "normalFalseWeather": 0,
+          "wetWeatherRetained": 2,
+          "calls": 4,
+          "inputTokens": null,
+          "outputTokens": null
+        },
+        "one-shot": {
+          "attempts": 4,
+          "accepted": 4,
+          "exact": 4,
+          "normalFalseWeather": 0,
+          "wetWeatherRetained": 2,
+          "calls": 4,
+          "inputTokens": null,
+          "outputTokens": null
+        }
+      }
+    }
+  }
+}

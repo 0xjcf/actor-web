@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "demo": "tsc --module node16 --target es2022 --strict --skipLibCheck --outDir dist demo.ts && node dist/demo.js"
+    "demo": "tsc --module node16 --target es2022 --strict --skipLibCheck --outDir dist demo.ts && node dist/demo.js",
+    "demo:planner": "tsc --module node16 --target es2022 --strict --skipLibCheck --outDir dist planner-read.ts && node --experimental-import-meta-resolve --test planner-read-demo.mjs"
   },
   "dependencies": {
     "@actor-web/agent": "workspace:*",

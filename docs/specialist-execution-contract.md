@@ -3,17 +3,17 @@
 AW-00-02 contract for the [Actor-Web milestone](todos.md). This specifies the
 host obligations for one local specialist assignment without changing the portable
 API. The scripted, in-memory source reviewer is the first consumer of the initial
-[`@actor-web/agent/actor-runtime` executor](../packages/actor-agent/README.md#local-actor-executor).
+[`@actor-web/agent/runner` runner](../packages/actor-agent/README.md#in-process-agent-runner).
 
 ## Boundaries
 
-- A specialist definition fixes one purpose, a system prompt, requested tool
+- A specialist spec fixes one purpose, a system prompt, requested tool
   descriptions, and an output parser. [`createAgent`](../packages/actor-agent/src/portable.ts)
   creates a `FocusedAgent`. Its `run(context): Promise<Content>` calls
-  `AgentRuntime.run(turn): Promise<string>` and parses the returned text
+  `AgentRunner.run(request): Promise<string>` and parses the returned text
   with the original assignment. Expected host execution failures reject the
   portable promise; neither return type gets a status or evidence envelope.
-- The trusted host selects the definition, executor, provider, grants, and
+- The trusted host selects the spec, runner, provider, grants, and
   assignment revision. Actor-Web runs the actor and enforces configured toolbox
   grants. The product or workflow owner decides whether validated content is
   usable for the current assignment; parsing does not advance a workflow.
@@ -25,7 +25,7 @@ API. The scripted, in-memory source reviewer is the first consumer of the initia
 ## From assignment to result
 
 1. **Bind the assignment.** The host pins the assignment ID and revision,
-   purpose, accepted definition, and tool grant before dispatch. Call the
+   purpose, accepted spec, and tool grant before dispatch. Call the
    specialist's `run` with a flat, plain-data assignment and a reserved `signal`
    field, which is forwarded separately from the task. For the first reviewer,
    the host takes a snapshot of the permitted source files. It encodes an
@@ -70,7 +70,7 @@ API. The scripted, in-memory source reviewer is the first consumer of the initia
 
 ## Stop, settlement, and evidence
 
-`createAgent` forwards an `AbortSignal`; it does not prevent dispatch or wait
+The portable `createAgent` forwards an `AbortSignal`; it does not prevent dispatch or wait
 for cleanup by itself. In the bounded profile, a stop request closes admission
 to new turns and tool calls and invalidates unaccepted results. It signals
 admitted work to stop where supported. Track underlying provider/tool work
@@ -81,7 +81,7 @@ separately from any timed or cancelled caller reply:
 - **Locally settled:** tracked local operations have settled and owned session
   resources have closed.
 - **Unresolved:** the host cannot establish local settlement within its wait
-  limit. Do not reuse the executor for another assignment while that state
+  limit. Do not reuse the runner for another assignment while that state
   remains unresolved. A late reply cannot reopen the cancelled assignment.
 
 None of these observations proves that a remote action did not run, was rolled
@@ -103,8 +103,8 @@ This limits what the local adapter dispatches and accepts, not allocation,
 network traffic, or remote effects.
 
 The AW-03-02 local adapter adds an opt-in observation via
-`createActorRuntime(...).start(turn)`. Abort still uses `turn.signal`. The
-handle separates `result` (the same text or error as `run(turn)`) from
+`createAgentRunner(...).start(request)`. Abort still uses `request.signal`. The
+handle separates `result` (the same text or error as `run(request)`) from
 `waitForSettlement(timeoutMs)`. Waiting does not stop work or change the
 execution deadlines. Use a bounded wait or pass zero to inspect without waiting:
 
@@ -120,7 +120,7 @@ This observation does not detect work detached by a provider or tool. It is
 not a correlated evidence receipt or a second route for accepting late results.
 The generic portable `run` return type is unchanged.
 
-AW-04-01 adds opt-in local evidence: `start(turn, { assignmentId, revision })`
+AW-04-01 adds opt-in local evidence: `start(request, { assignmentId, revision })`
 adds `readEvidence()` and `validateOutput(parse)` to the handle. The assignment
 ID is an opaque host reference, not task text or a secret. The snapshot is
 absent before an owned startup attempt; its session ID identifies that attempt,
@@ -157,11 +157,15 @@ the plain portable result and the observed local handle.
 
 ## Consumer example
 
-This factory binds a typed reviewer to a supplied executor. It neither starts
+For the built-in local executor, `createAgent({ spec, ...options })` from
+`@actor-web/agent/runner` combines runner construction and portable binding.
+Use the lower-level runner when you need its settlement or evidence handles.
+
+This portable factory binds a typed reviewer to a supplied runner. It neither starts
 an actor nor grants the requested read tool.
 
 ```ts
-import { createAgent, type AgentRuntime } from '@actor-web/agent/portable';
+import { createAgent, type AgentRunner } from '@actor-web/agent/portable';
 import { structured } from '@actor-web/agent/zod';
 import { z } from 'zod';
 
@@ -170,8 +174,8 @@ type Assignment = {
   readonly files: readonly { readonly path: string; readonly source: string }[];
 };
 
-export function createReviewer(runtime: AgentRuntime<Assignment, 'review'>) {
-  return createAgent(runtime, {
+export function createReviewer(runner: AgentRunner<Assignment, 'review'>) {
+  return createAgent(runner, {
     purpose: 'review',
     systemPrompt: 'Review the supplied sources and cite the relevant excerpt.',
     tools: [{
@@ -207,16 +211,16 @@ the whole host flow.
 
 | Case | Required observation | Existing evidence and its limit |
 | --- | --- | --- |
-| Granted read and valid citation | One in-scope read, then typed content that cites the pinned source. Acceptance is a caller decision. | [Portable tests](../packages/actor-agent/tests/portable.test.ts) cover turn binding and parsing with a supplied executor. AW-01-01 joins this to a real actor and read port. |
+| Granted read and valid citation | One in-scope read, then typed content that cites the pinned source. Acceptance is a caller decision. | [Portable tests](../packages/actor-agent/tests/portable.test.ts) cover assignment binding and parsing with a supplied runner. AW-01-01 joins this to a real actor and read port. |
 | Denied tool or path | Caller sees an execution failure; the denied tool or out-of-scope read performs no effect. No success output is accepted. | [Provider tests](../packages/actor-agent/src/llm-provider.test.ts) check tool-name filtering and [toolbox tests](../packages/actor-core-runtime/src/unit/actor-tools.test.ts) check allowlist enforcement. The assignment's path check belongs to the host tool. |
 | Bad output | The caller sees `AgentOutputError` with `invalidJson`, `schemaMismatch`, or `taskMismatch`. No repair or accepted result. | Portable tests cover all three parser outcomes. |
-| Provider failure | The actor replies with an error fact, such as `LLM_PROVIDER_UNAVAILABLE`. The portable run rejects with a distinguishable execution failure, not a parse error. | [Loop tests](../packages/actor-agent/src/agent-loop.test.ts) and provider tests cover error replies; portable tests cover executor error propagation. |
-| Assignment budget exhausted | A dimension-specific error rejects the run; no over-budget port is called or result forwarded. | [Local executor tests](../packages/actor-agent/tests/actor-runtime.test.ts) exercise scripted dispatch and acceptance at the budget boundaries. |
-| Stop before dispatch or during work | A pre-dispatch stop causes no effects. A stop during a live tool call prevents late acceptance; the caller can observe unresolved cleanup if the tool does not settle. | Portable tests show signal forwarding to a cooperative executor; toolbox tests show timeout and abort notification. Neither proves host settlement. |
+| Provider failure | The actor replies with an error fact, such as `LLM_PROVIDER_UNAVAILABLE`. The portable run rejects with a distinguishable execution failure, not a parse error. | [Loop tests](../packages/actor-agent/src/agent-loop.test.ts) and provider tests cover error replies; portable tests cover runner error propagation. |
+| Assignment budget exhausted | A dimension-specific error rejects the run; no over-budget port is called or result forwarded. | [Local runner tests](../packages/actor-agent/tests/runner.test.ts) exercise scripted dispatch and acceptance at the budget boundaries. |
+| Stop before dispatch or during work | A pre-dispatch stop causes no effects. A stop during a live tool call prevents late acceptance; the caller can observe unresolved cleanup if the tool does not settle. | Portable tests show signal forwarding to a cooperative runner; toolbox tests show timeout and abort notification. Neither proves host settlement. |
 
-The [reusable executor conformance cases](../packages/actor-agent/tests/executor-conformance.ts)
-take a factory returning a portable `AgentRuntime` and observe scripted provider
-requests and in-memory tool effects. The [agent test suite](../packages/actor-agent/tests/executor-conformance.test.ts)
+The [reusable runner conformance cases](../packages/actor-agent/tests/runner-conformance.ts)
+take a factory returning a portable `AgentRunner` and observe scripted provider
+requests and in-memory tool effects. The [agent test suite](../packages/actor-agent/tests/runner-conformance.test.ts)
 runs them against the real local adapter and test-only history, grant, and
 retry faults. These source-level conformance cases do not qualify packed
 consumers or post-dispatch settlement.

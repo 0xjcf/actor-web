@@ -1,0 +1,895 @@
+{
+  "reports": {
+    "scripted": {
+      "file": "20261125T183215Z-gate-scripted.json.gz",
+      "sha256": "6bd18d9b61365f5a6ce43c027d807db2c1f81f1ac4c5ab6863a43270677cf6d1"
+    },
+    "live": {
+      "file": "20261125T183215Z-gate-live.json.gz",
+      "sha256": "5e210d9e3e7866aac7c350f723c7cb78a0b56f96091ef7d35589948a5491aa98"
+    }
+  },
+  "sourceSha256": {
+    "demo.ts": "0476162237236efdecd0070b39b62a400bf1b9ec57f0ecc5f889036752059992",
+    "gate-experiment.ts": "04908c57539bad4cdd5d7d350f1b03b9da74f6dddbe8adc0ee687048d4404dee",
+    "investigation.ts": "658a0c622f1efa12f7b5788c92c3bc42f6c0de167de9c0b84abe394e8e186b91",
+    "reconciliation.ts": "f9a2ad6b24a99cce7a33889d5c19aa64f2f486d04844e735b6f55b72d5d49166",
+    "evaluation.ts": "16d3da5c74545d4cd07938fa2cfd98f6517604df77e541b3df2f331ec58cbcec",
+    "evidence.ts": "78c607041509f390dc395d60f741381dcb27d27eb0c0d2f8ede5e1141105aa81",
+    "fixtures.ts": "1fe3d5bbd7a191b4731a355aae549dac487622de9f86f2653b51ea5b3669945c",
+    "scripted-provider.ts": "404539308a0f7c6ddb0e9aecd09d0084e8261370d085de6fe303237f0fad1707",
+    "policy.ts": "ca58514a7dc68dd11c442f96805e87fa5e8a5364fb626aac10241133e58fd1fb"
+  },
+  "model": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "settings": {
+      "status": "captured",
+      "value": {
+        "temperature": 0,
+        "max_completion_tokens": 900,
+        "parallelToolCalls": false
+      }
+    }
+  },
+  "bounds": {
+    "maxCalls": 318,
+    "maxReadsPerAssignment": 6,
+    "retries": 0
+  },
+  "passDefinition": "Accepted with correct host-calculated numeric facts, fixture status, and exact finding kinds. Not a semantic score. All attempted assignments counted.",
+  "byArm": {
+    "scripted": {
+      "rules": {
+        "n": 12,
+        "accepted": 12,
+        "passAll": 8,
+        "reads": 36,
+        "calls": 12,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "withUsage": 0,
+        "meanMs": 3,
+        "rejections": {}
+      },
+      "fixed": {
+        "n": 12,
+        "accepted": 12,
+        "passAll": 10,
+        "reads": 66,
+        "calls": 12,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "withUsage": 0,
+        "meanMs": 2,
+        "rejections": {}
+      },
+      "hybrid": {
+        "n": 12,
+        "accepted": 12,
+        "passAll": 10,
+        "reads": 38,
+        "calls": 26,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "withUsage": 0,
+        "meanMs": 2,
+        "rejections": {}
+      },
+      "adaptive": {
+        "n": 12,
+        "accepted": 12,
+        "passAll": 8,
+        "reads": 36,
+        "calls": 48,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "withUsage": 0,
+        "meanMs": 4,
+        "rejections": {}
+      },
+      "hybrid-gated": {
+        "n": 12,
+        "accepted": 12,
+        "passAll": 10,
+        "reads": 38,
+        "calls": 26,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "withUsage": 0,
+        "meanMs": 2,
+        "rejections": {}
+      },
+      "hybrid-discriminate": {
+        "n": 12,
+        "accepted": 12,
+        "passAll": 10,
+        "reads": 38,
+        "calls": 26,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "withUsage": 0,
+        "meanMs": 2,
+        "rejections": {}
+      },
+      "hybrid-gated-discriminate": {
+        "n": 12,
+        "accepted": 12,
+        "passAll": 10,
+        "reads": 38,
+        "calls": 26,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "withUsage": 0,
+        "meanMs": 2,
+        "rejections": {}
+      }
+    },
+    "live": {
+      "rules": {
+        "n": 12,
+        "accepted": 10,
+        "passAll": 4,
+        "reads": 36,
+        "calls": 12,
+        "inputTokens": 33014,
+        "outputTokens": 2825,
+        "withUsage": 12,
+        "meanMs": 2989,
+        "rejections": {
+          "taskMismatch": 2
+        }
+      },
+      "fixed": {
+        "n": 12,
+        "accepted": 8,
+        "passAll": 4,
+        "reads": 66,
+        "calls": 12,
+        "inputTokens": 33050,
+        "outputTokens": 3100,
+        "withUsage": 12,
+        "meanMs": 3421,
+        "rejections": {
+          "taskMismatch": 4
+        }
+      },
+      "hybrid": {
+        "n": 12,
+        "accepted": 5,
+        "passAll": 1,
+        "reads": 65,
+        "calls": 53,
+        "inputTokens": 89726,
+        "outputTokens": 5126,
+        "withUsage": 12,
+        "meanMs": 7676,
+        "rejections": {
+          "schemaMismatch": 4,
+          "taskMismatch": 3
+        }
+      },
+      "adaptive": {
+        "n": 12,
+        "accepted": 4,
+        "passAll": 0,
+        "reads": 58,
+        "calls": 70,
+        "inputTokens": 153628,
+        "outputTokens": 6274,
+        "withUsage": 12,
+        "meanMs": 9686,
+        "rejections": {
+          "taskMismatch": 8
+        }
+      },
+      "hybrid-gated": {
+        "n": 12,
+        "accepted": 12,
+        "passAll": 6,
+        "reads": 49,
+        "calls": 37,
+        "inputTokens": 58237,
+        "outputTokens": 3944,
+        "withUsage": 12,
+        "meanMs": 5436,
+        "rejections": {}
+      },
+      "hybrid-discriminate": {
+        "n": 12,
+        "accepted": 7,
+        "passAll": 1,
+        "reads": 61,
+        "calls": 49,
+        "inputTokens": 81871,
+        "outputTokens": 4587,
+        "withUsage": 12,
+        "meanMs": 6081,
+        "rejections": {
+          "schemaMismatch": 3,
+          "taskMismatch": 2
+        }
+      },
+      "hybrid-gated-discriminate": {
+        "n": 12,
+        "accepted": 11,
+        "passAll": 5,
+        "reads": 48,
+        "calls": 36,
+        "inputTokens": 57087,
+        "outputTokens": 3704,
+        "withUsage": 12,
+        "meanMs": 4427,
+        "rejections": {
+          "taskMismatch": 1
+        }
+      }
+    }
+  },
+  "liveByCase": {
+    "bulk-order": {
+      "rules": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 2,
+        "reads": 4,
+        "calls": 2,
+        "inputTokens": 5044,
+        "outputTokens": 355,
+        "withUsage": 2,
+        "meanMs": 2870,
+        "rejections": {}
+      },
+      "fixed": {
+        "n": 2,
+        "accepted": 0,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 2,
+        "inputTokens": 6424,
+        "outputTokens": 647,
+        "withUsage": 2,
+        "meanMs": 5088,
+        "rejections": {
+          "taskMismatch": 2
+        }
+      },
+      "hybrid": {
+        "n": 2,
+        "accepted": 0,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 10,
+        "inputTokens": 17561,
+        "outputTokens": 824,
+        "withUsage": 2,
+        "meanMs": 8459,
+        "rejections": {
+          "schemaMismatch": 2
+        }
+      },
+      "adaptive": {
+        "n": 2,
+        "accepted": 0,
+        "passAll": 0,
+        "reads": 11,
+        "calls": 13,
+        "inputTokens": 31261,
+        "outputTokens": 1260,
+        "withUsage": 2,
+        "meanMs": 11154,
+        "rejections": {
+          "taskMismatch": 2
+        }
+      },
+      "hybrid-gated": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 2,
+        "reads": 4,
+        "calls": 2,
+        "inputTokens": 1838,
+        "outputTokens": 414,
+        "withUsage": 2,
+        "meanMs": 2646,
+        "rejections": {}
+      },
+      "hybrid-discriminate": {
+        "n": 2,
+        "accepted": 0,
+        "passAll": 0,
+        "reads": 10,
+        "calls": 8,
+        "inputTokens": 13112,
+        "outputTokens": 715,
+        "withUsage": 2,
+        "meanMs": 5824,
+        "rejections": {
+          "schemaMismatch": 2
+        }
+      },
+      "hybrid-gated-discriminate": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 2,
+        "reads": 4,
+        "calls": 2,
+        "inputTokens": 1908,
+        "outputTokens": 407,
+        "withUsage": 2,
+        "meanMs": 2137,
+        "rejections": {}
+      }
+    },
+    "data-defect": {
+      "rules": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 4,
+        "calls": 2,
+        "inputTokens": 7058,
+        "outputTokens": 427,
+        "withUsage": 2,
+        "meanMs": 2658,
+        "rejections": {}
+      },
+      "fixed": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 2,
+        "inputTokens": 8438,
+        "outputTokens": 319,
+        "withUsage": 2,
+        "meanMs": 2230,
+        "rejections": {}
+      },
+      "hybrid": {
+        "n": 2,
+        "accepted": 0,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 10,
+        "inputTokens": 17556,
+        "outputTokens": 906,
+        "withUsage": 2,
+        "meanMs": 8048,
+        "rejections": {
+          "schemaMismatch": 1,
+          "taskMismatch": 1
+        }
+      },
+      "adaptive": {
+        "n": 2,
+        "accepted": 0,
+        "passAll": 0,
+        "reads": 11,
+        "calls": 13,
+        "inputTokens": 36299,
+        "outputTokens": 1354,
+        "withUsage": 2,
+        "meanMs": 12508,
+        "rejections": {
+          "taskMismatch": 2
+        }
+      },
+      "hybrid-gated": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 2,
+        "reads": 4,
+        "calls": 2,
+        "inputTokens": 1838,
+        "outputTokens": 397,
+        "withUsage": 2,
+        "meanMs": 2630,
+        "rejections": {}
+      },
+      "hybrid-discriminate": {
+        "n": 2,
+        "accepted": 1,
+        "passAll": 0,
+        "reads": 11,
+        "calls": 9,
+        "inputTokens": 15495,
+        "outputTokens": 771,
+        "withUsage": 2,
+        "meanMs": 6210,
+        "rejections": {
+          "schemaMismatch": 1
+        }
+      },
+      "hybrid-gated-discriminate": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 2,
+        "reads": 4,
+        "calls": 2,
+        "inputTokens": 1908,
+        "outputTokens": 396,
+        "withUsage": 2,
+        "meanMs": 2194,
+        "rejections": {}
+      }
+    },
+    "restocking": {
+      "rules": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 6,
+        "calls": 2,
+        "inputTokens": 5540,
+        "outputTokens": 635,
+        "withUsage": 2,
+        "meanMs": 3438,
+        "rejections": {}
+      },
+      "fixed": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 2,
+        "inputTokens": 6528,
+        "outputTokens": 667,
+        "withUsage": 2,
+        "meanMs": 4285,
+        "rejections": {}
+      },
+      "hybrid": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 10,
+        "inputTokens": 17618,
+        "outputTokens": 1049,
+        "withUsage": 2,
+        "meanMs": 9857,
+        "rejections": {}
+      },
+      "adaptive": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 10,
+        "calls": 12,
+        "inputTokens": 27202,
+        "outputTokens": 1034,
+        "withUsage": 2,
+        "meanMs": 10010,
+        "rejections": {}
+      },
+      "hybrid-gated": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 10,
+        "inputTokens": 17491,
+        "outputTokens": 977,
+        "withUsage": 2,
+        "meanMs": 8136,
+        "rejections": {}
+      },
+      "hybrid-discriminate": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 10,
+        "inputTokens": 17878,
+        "outputTokens": 989,
+        "withUsage": 2,
+        "meanMs": 7201,
+        "rejections": {}
+      },
+      "hybrid-gated-discriminate": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 10,
+        "inputTokens": 17912,
+        "outputTokens": 954,
+        "withUsage": 2,
+        "meanMs": 7227,
+        "rejections": {}
+      }
+    },
+    "mixed-order-promotion": {
+      "rules": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 4,
+        "calls": 2,
+        "inputTokens": 5044,
+        "outputTokens": 354,
+        "withUsage": 2,
+        "meanMs": 2248,
+        "rejections": {}
+      },
+      "fixed": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 2,
+        "reads": 12,
+        "calls": 2,
+        "inputTokens": 6528,
+        "outputTokens": 509,
+        "withUsage": 2,
+        "meanMs": 2940,
+        "rejections": {}
+      },
+      "hybrid": {
+        "n": 2,
+        "accepted": 1,
+        "passAll": 1,
+        "reads": 11,
+        "calls": 9,
+        "inputTokens": 15476,
+        "outputTokens": 1002,
+        "withUsage": 2,
+        "meanMs": 8259,
+        "rejections": {
+          "taskMismatch": 1
+        }
+      },
+      "adaptive": {
+        "n": 2,
+        "accepted": 0,
+        "passAll": 0,
+        "reads": 10,
+        "calls": 12,
+        "inputTokens": 27366,
+        "outputTokens": 1076,
+        "withUsage": 2,
+        "meanMs": 9472,
+        "rejections": {
+          "taskMismatch": 2
+        }
+      },
+      "hybrid-gated": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 2,
+        "reads": 11,
+        "calls": 9,
+        "inputTokens": 15561,
+        "outputTokens": 873,
+        "withUsage": 2,
+        "meanMs": 7746,
+        "rejections": {}
+      },
+      "hybrid-discriminate": {
+        "n": 2,
+        "accepted": 1,
+        "passAll": 1,
+        "reads": 10,
+        "calls": 8,
+        "inputTokens": 13400,
+        "outputTokens": 902,
+        "withUsage": 2,
+        "meanMs": 6989,
+        "rejections": {
+          "taskMismatch": 1
+        }
+      },
+      "hybrid-gated-discriminate": {
+        "n": 2,
+        "accepted": 1,
+        "passAll": 1,
+        "reads": 10,
+        "calls": 8,
+        "inputTokens": 13353,
+        "outputTokens": 782,
+        "withUsage": 2,
+        "meanMs": 5830,
+        "rejections": {
+          "taskMismatch": 1
+        }
+      }
+    },
+    "partial-availability": {
+      "rules": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 2,
+        "reads": 12,
+        "calls": 2,
+        "inputTokens": 2878,
+        "outputTokens": 478,
+        "withUsage": 2,
+        "meanMs": 2880,
+        "rejections": {}
+      },
+      "fixed": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 2,
+        "reads": 12,
+        "calls": 2,
+        "inputTokens": 2878,
+        "outputTokens": 429,
+        "withUsage": 2,
+        "meanMs": 2655,
+        "rejections": {}
+      },
+      "hybrid": {
+        "n": 2,
+        "accepted": 0,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 10,
+        "inputTokens": 16123,
+        "outputTokens": 845,
+        "withUsage": 2,
+        "meanMs": 7688,
+        "rejections": {
+          "schemaMismatch": 1,
+          "taskMismatch": 1
+        }
+      },
+      "adaptive": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 10,
+        "calls": 12,
+        "inputTokens": 19600,
+        "outputTokens": 738,
+        "withUsage": 2,
+        "meanMs": 8234,
+        "rejections": {}
+      },
+      "hybrid-gated": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 10,
+        "inputTokens": 16115,
+        "outputTokens": 827,
+        "withUsage": 2,
+        "meanMs": 8009,
+        "rejections": {}
+      },
+      "hybrid-discriminate": {
+        "n": 2,
+        "accepted": 1,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 10,
+        "inputTokens": 16446,
+        "outputTokens": 707,
+        "withUsage": 2,
+        "meanMs": 7148,
+        "rejections": {
+          "taskMismatch": 1
+        }
+      },
+      "hybrid-gated-discriminate": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 12,
+        "calls": 10,
+        "inputTokens": 16466,
+        "outputTokens": 649,
+        "withUsage": 2,
+        "meanMs": 5846,
+        "rejections": {}
+      }
+    },
+    "confounded": {
+      "rules": {
+        "n": 2,
+        "accepted": 0,
+        "passAll": 0,
+        "reads": 6,
+        "calls": 2,
+        "inputTokens": 7450,
+        "outputTokens": 576,
+        "withUsage": 2,
+        "meanMs": 3838,
+        "rejections": {
+          "taskMismatch": 2
+        }
+      },
+      "fixed": {
+        "n": 2,
+        "accepted": 0,
+        "passAll": 0,
+        "reads": 6,
+        "calls": 2,
+        "inputTokens": 2254,
+        "outputTokens": 529,
+        "withUsage": 2,
+        "meanMs": 3328,
+        "rejections": {
+          "taskMismatch": 2
+        }
+      },
+      "hybrid": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 6,
+        "calls": 4,
+        "inputTokens": 5392,
+        "outputTokens": 500,
+        "withUsage": 2,
+        "meanMs": 3742,
+        "rejections": {}
+      },
+      "adaptive": {
+        "n": 2,
+        "accepted": 0,
+        "passAll": 0,
+        "reads": 6,
+        "calls": 8,
+        "inputTokens": 11900,
+        "outputTokens": 812,
+        "withUsage": 2,
+        "meanMs": 6741,
+        "rejections": {
+          "taskMismatch": 2
+        }
+      },
+      "hybrid-gated": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 6,
+        "calls": 4,
+        "inputTokens": 5394,
+        "outputTokens": 456,
+        "withUsage": 2,
+        "meanMs": 3452,
+        "rejections": {}
+      },
+      "hybrid-discriminate": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 6,
+        "calls": 4,
+        "inputTokens": 5540,
+        "outputTokens": 503,
+        "withUsage": 2,
+        "meanMs": 3115,
+        "rejections": {}
+      },
+      "hybrid-gated-discriminate": {
+        "n": 2,
+        "accepted": 2,
+        "passAll": 0,
+        "reads": 6,
+        "calls": 4,
+        "inputTokens": 5540,
+        "outputTokens": 516,
+        "withUsage": 2,
+        "meanMs": 3328,
+        "rejections": {}
+      }
+    }
+  },
+  "pairedLiveContrasts": {
+    "gateAtStandard": {
+      "from": "hybrid",
+      "to": "hybrid-gated",
+      "all": {
+        "pairs": 12,
+        "gainedPass": 5,
+        "lostPass": 0,
+        "deltaCalls": -16,
+        "deltaReads": -16,
+        "deltaInputTokens": -31489
+      },
+      "gateEligible": {
+        "pairs": 4,
+        "gainedPass": 4,
+        "lostPass": 0,
+        "deltaCalls": -16,
+        "deltaReads": -16,
+        "deltaInputTokens": -31441
+      },
+      "gateIneligible": {
+        "pairs": 8,
+        "gainedPass": 1,
+        "lostPass": 0,
+        "deltaCalls": 0,
+        "deltaReads": 0,
+        "deltaInputTokens": -48
+      }
+    },
+    "gateAtDiscriminate": {
+      "from": "hybrid-discriminate",
+      "to": "hybrid-gated-discriminate",
+      "all": {
+        "pairs": 12,
+        "gainedPass": 5,
+        "lostPass": 1,
+        "deltaCalls": -13,
+        "deltaReads": -13,
+        "deltaInputTokens": -24784
+      },
+      "gateEligible": {
+        "pairs": 4,
+        "gainedPass": 4,
+        "lostPass": 0,
+        "deltaCalls": -13,
+        "deltaReads": -13,
+        "deltaInputTokens": -24791
+      },
+      "gateIneligible": {
+        "pairs": 8,
+        "gainedPass": 1,
+        "lostPass": 1,
+        "deltaCalls": 0,
+        "deltaReads": 0,
+        "deltaInputTokens": 7
+      }
+    },
+    "promptWhenOpen": {
+      "from": "hybrid",
+      "to": "hybrid-discriminate",
+      "all": {
+        "pairs": 12,
+        "gainedPass": 0,
+        "lostPass": 0,
+        "deltaCalls": -4,
+        "deltaReads": -4,
+        "deltaInputTokens": -7855
+      },
+      "gateEligible": {
+        "pairs": 4,
+        "gainedPass": 0,
+        "lostPass": 0,
+        "deltaCalls": -3,
+        "deltaReads": -3,
+        "deltaInputTokens": -6510
+      },
+      "gateIneligible": {
+        "pairs": 8,
+        "gainedPass": 0,
+        "lostPass": 0,
+        "deltaCalls": -1,
+        "deltaReads": -1,
+        "deltaInputTokens": -1345
+      }
+    },
+    "promptWithGate": {
+      "from": "hybrid-gated",
+      "to": "hybrid-gated-discriminate",
+      "all": {
+        "pairs": 12,
+        "gainedPass": 0,
+        "lostPass": 1,
+        "deltaCalls": -1,
+        "deltaReads": -1,
+        "deltaInputTokens": -1150
+      },
+      "gateEligible": {
+        "pairs": 4,
+        "gainedPass": 0,
+        "lostPass": 0,
+        "deltaCalls": 0,
+        "deltaReads": 0,
+        "deltaInputTokens": 140
+      },
+      "gateIneligible": {
+        "pairs": 8,
+        "gainedPass": 0,
+        "lostPass": 1,
+        "deltaCalls": -1,
+        "deltaReads": -1,
+        "deltaInputTokens": -1290
+      }
+    }
+  }
+}

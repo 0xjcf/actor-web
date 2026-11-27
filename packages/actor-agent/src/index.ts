@@ -19,6 +19,31 @@ import {
 
 export type { LlmProviderOptions } from './llm-provider.js';
 export { createLlmProvider } from './llm-provider.js';
+export {
+  AGENT_TRACE_SCHEMA_VERSION,
+  type AgentRunTraceSnapshot,
+  type AgentTraceCapture,
+  type AgentTraceCompleteness,
+  type AgentTraceConfiguration,
+  type AgentTraceContentField,
+  type AgentTraceEvent,
+  type AgentTraceEventMap,
+  type AgentTraceEventType,
+  type AgentTraceFailure,
+  type AgentTraceMessage,
+  type AgentTraceModel,
+  type AgentTraceModelCall,
+  type AgentTraceModelRequest,
+  type AgentTraceOptions,
+  type AgentTracePayload,
+  type AgentTraceProfile,
+  type AgentTraceRecord,
+  type AgentTraceRunInput,
+  type AgentTraceRunSummary,
+  type AgentTraceToolCall,
+  type AgentTraceToolReference,
+  serializeAgentTraceJsonl,
+} from './trace.js';
 
 export const ACTOR_WEB_LLM_TOOL_NAME = 'llm' as const;
 
@@ -30,11 +55,15 @@ export interface ActorAgentToolCall {
   readonly input: unknown;
 }
 
+/** @deprecated Use ModelToolDefinition for provider-facing tool metadata. */
 export interface ActorAgentToolDefinition {
   readonly name: string;
   readonly description?: string;
   readonly inputSchema?: JsonValue;
 }
+
+// Preserve declaration merging for consumers of the published interface.
+export type ModelToolDefinition = ActorAgentToolDefinition;
 
 export interface ActorAgentLlmMessage {
   readonly role: ActorAgentMessageRole;
@@ -42,13 +71,20 @@ export interface ActorAgentLlmMessage {
   readonly toolCallId?: string;
   readonly toolName?: string;
   readonly toolCalls?: readonly ActorAgentToolCall[];
+  /** Provider-returned summaries; not raw internal reasoning. */
+  readonly reasoningSummaries?: readonly string[];
+  /** Opaque continuation data. Replay to the same provider; exclude from evaluation logs. */
+  readonly providerState?: {
+    readonly format: 'openai-responses';
+    readonly reasoningItems: readonly JsonValue[];
+  };
 }
 
 export interface ActorAgentLlmRequest {
   readonly system?: string;
   readonly messages: readonly ActorAgentLlmMessage[];
   readonly tools: readonly string[];
-  readonly toolDefinitions?: readonly ActorAgentToolDefinition[];
+  readonly toolDefinitions?: readonly ModelToolDefinition[];
 }
 
 export interface ActorAgentTokenUsage {
@@ -183,7 +219,7 @@ export type ActorAgentLoopEvent =
 
 export interface ActorAgentLoopOptions {
   readonly system?: string;
-  readonly toolDefinitions?: readonly ActorAgentToolDefinition[];
+  readonly toolDefinitions?: readonly ModelToolDefinition[];
   readonly initialHistory?: readonly ActorAgentLlmMessage[];
   readonly initialCheckpointState?: ActorAgentLoopCheckpointState;
   readonly llmTimeoutMs?: number;
@@ -277,9 +313,9 @@ function toolNamesForModel(tools: { list(): string[] }): readonly string[] {
 }
 
 function toolDefinitionsForModel(
-  requested: readonly ActorAgentToolDefinition[] | undefined,
+  requested: readonly ModelToolDefinition[] | undefined,
   allowedTools: readonly string[]
-): readonly ActorAgentToolDefinition[] | undefined {
+): readonly ModelToolDefinition[] | undefined {
   if (!requested || requested.length === 0) {
     return undefined;
   }
@@ -419,6 +455,14 @@ function isActorAgentLlmMessage(value: unknown): value is ActorAgentLlmMessage {
       candidate.role === 'assistant' ||
       candidate.role === 'tool') &&
     typeof candidate.content === 'string' &&
+    (candidate.reasoningSummaries === undefined ||
+      (Array.isArray(candidate.reasoningSummaries) &&
+        candidate.reasoningSummaries.every((text) => typeof text === 'string'))) &&
+    (candidate.providerState === undefined ||
+      (candidate.providerState !== null &&
+        typeof candidate.providerState === 'object' &&
+        (candidate.providerState as { format?: unknown }).format === 'openai-responses' &&
+        Array.isArray((candidate.providerState as { reasoningItems?: unknown }).reasoningItems))) &&
     (candidate.toolCallId === undefined || typeof candidate.toolCallId === 'string') &&
     (candidate.toolName === undefined || typeof candidate.toolName === 'string') &&
     (candidate.toolCalls === undefined ||
@@ -715,7 +759,7 @@ async function reconcileAgentSessionCheckpoint(input: {
   return { ok: true, context: nextContext };
 }
 
-export function createActorAgentToolRegistry(input: {
+export function createLlmToolRegistry(input: {
   readonly llm: ActorAgentLlmProvider;
 }): ActorAgentToolRegistry {
   return {
@@ -739,6 +783,9 @@ export function createActorAgentToolRegistry(input: {
     },
   };
 }
+
+/** @deprecated Use createLlmToolRegistry for typed `llm` registration. */
+export const createActorAgentToolRegistry = createLlmToolRegistry;
 
 export function createAgentLoopBehavior(
   options: ActorAgentLoopOptions = {}
@@ -1124,5 +1171,5 @@ export function createAgentLoopBehavior(
 export function createActorAgentTools(input: {
   readonly llm: ActorAgentLlmProvider;
 }): ActorToolRegistry {
-  return createActorAgentToolRegistry(input) as unknown as ActorToolRegistry;
+  return createLlmToolRegistry(input) as unknown as ActorToolRegistry;
 }

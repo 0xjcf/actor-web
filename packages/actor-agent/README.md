@@ -16,19 +16,195 @@ npm install @actor-web/runtime @actor-web/agent
 The examples below use APIs added after `@actor-web/agent@0.2.1`. If you are
 pinned to `0.2.1`, use `createOpenAiCompatibleLlmProvider` and the Chat
 Completions API. That version does not include Responses support, `START_AGENT`
-with `reset`, or the `./portable`, `./actor-runtime` and `./zod` entry points.
+with `reset`, or the `./portable`, `./runner` and `./zod` entry points.
 
 ## Public API
+
+<!-- Public exports from src/index.ts, src/portable.ts, and src/runner.ts. -->
 
 | Export | Use for |
 | --- | --- |
 | `createAgentLoopBehavior(options?)` | Standard agent loop behavior that accepts `START_AGENT`, observes tool results, and emits agent step/tool events |
-| `createActorAgentToolRegistry({ llm })` | Typed `llm` tool registration for runtime toolboxes |
+| `createLlmToolRegistry({ llm })` | Typed `llm` registration; the published `createActorAgentToolRegistry` name remains a deprecated alias |
 | `createActorAgentTools({ llm })` | Runtime-ready tool registry for `startRuntime(..., { tools })` |
 | `createLlmProvider({ endpoint, model, timeoutMs?, ... })` | Chat Completions adapter. An endpoint path that ends in `/responses` uses the Responses wire. The host supplies the endpoint, model, and headers |
 | `ACTOR_WEB_LLM_TOOL_NAME` | Stable tool name for the injected LLM provider |
-| `ActorAgent*` types | Message, event, provider, tool-call, tool-definition, and error contracts |
-| `createActorRuntime(options)` from `@actor-web/agent/actor-runtime` | Local executor implementing the portable `AgentRuntime` contract |
+| `ModelToolDefinition` | Provider-facing tool metadata (`inputSchema`); `ActorAgentToolDefinition` is the deprecated name |
+| `ActorAgent*` types | Message, event, provider, tool-call, and error contracts |
+| `AgentTracePayload`, `AgentTraceEvent`, `AgentTraceEventMap` | Typed evaluation observations and their correlated runtime event envelope |
+| `AgentTraceCapture<T>`, `AgentTraceCompleteness` | Explicit content availability and event-stream loss |
+| `AgentTraceProfile`, `AgentTraceConfiguration`, `AgentTraceOptions` | Named runner capture profiles or low-level options, with limits, redaction, and an isolated sink |
+| `createTerminalTraceReporter`, `formatTerminalTraceEvent` from `@actor-web/agent/terminal` | Stream human-readable events to a host-selected writer, or format one event without writing |
+| `AGENT_TRACE_SCHEMA_VERSION`, `AgentRunTraceSnapshot`, `AgentTraceRecord`, `AgentTraceRunSummary`, `serializeAgentTraceJsonl` | Canonical version, snapshot and JSONL records, and portable serialization |
+| `AgentSpec<Content, Task, Purpose>` from `@actor-web/agent/portable` | Purpose, instructions, requested tools, and output contract |
+| `createAgent({ spec, ...options })`, `CreateAgentOptions` from `@actor-web/agent/runner` | Typed agent with a built-in fresh-session runner |
+| `createAgent(runner, spec)` from `@actor-web/agent/portable` | Portable binding for a custom runner |
+| `createAgentRunner(options)` from `@actor-web/agent/runner` | Local runner implementing the portable `AgentRunner` contract |
+
+## Evaluation trace schema
+
+<!-- Evaluation trace types from src/trace.ts and runner instrumentation in src/runner.ts and src/runner-trace.ts. -->
+
+`AgentTracePayload` is a discriminated TypeScript union for evaluation capture.
+The local runner emits this vocabulary in `AgentTraceEvent` envelopes when its
+`trace` option is supplied. Tracing is off by default; configured tracing defaults
+to metadata-only capture. These APIs are available in this checkout, not the
+published 0.2.1 package. There is no general parser for untrusted trace JSON or
+built-in durable storage.
+
+- `run.started` records the task, method revision, safe experiment configuration,
+  and optional versioned dataset/case and code revision.
+- `model.requested` records the provider/model, known effective settings, and the
+  normalized request after prompt composition, tool grant filtering, and example
+  injection. Its captured request includes system text, message history, tool
+  names, and effective tool definitions/schemas.
+- `model.returned` records the assistant message, proposed tool calls, optional
+  provider-returned reasoning summaries, reported token usage, and elapsed time.
+  `model.failed` records a sanitized failure code, including provider replies
+  rejected by runner normalization. Invalid replies are not logged verbatim.
+- `tool.requested` records proposed arguments. `tool.rejected` means no handler
+  was dispatched. `tool.observed` records validated handler input and its returned
+  output; `tool.failed` records an execution failure. Correlate calls using
+  `modelCallId` and `toolCallId`, never by tool name. Execution attempts carry an
+  `attempt` number.
+- `output.validated` identifies the validator and revision, with either a passed
+  parsed output or a failed code. Raw final candidate text remains in the model
+  response. Validation is not a quality score or workflow acceptance.
+- `run.completed`, `run.failed`, and `run.cancelled` describe raw runner execution,
+  not whether an evaluator considers the answer correct. `run.completed` carries
+  raw text and precedes host validation; an invalid final answer can have
+  successful raw execution followed by failed `output.validated`.
+
+### Capture profiles
+
+Set `trace.profile` in `createAgentRunner` from your application's settings.
+All enabled profiles emit the same versioned `AgentTraceEvent` envelope.
+
+| Profile | Behavior |
+| --- | --- |
+| `off` | Like omitting `trace`: no events, sink calls, or trace snapshot |
+| `metadata` | Events, identifiers, timings, usage, and failure codes; content fields are omitted |
+| `evaluation` | Same events with bounded content capture and optional host redaction |
+
+An enabled profile requires `methodRevision` and a `model` descriptor
+(`provider`, `model`, and explicitly captured/omitted `settings`). For example:
+
+```ts
+import { createAgentRunner } from '@actor-web/agent/runner';
+import { createTerminalTraceReporter } from '@actor-web/agent/terminal';
+
+const runner = createAgentRunner({
+  ...runnerOptions,
+  trace: {
+    profile: 'metadata',
+    methodRevision: 'source-review-v1',
+    onEvent: createTerminalTraceReporter({ writeLine: (text) => console.error(text) }),
+    model: {
+      provider: 'openai',
+      model: 'gpt-4.1-mini',
+      settings: { status: 'omitted', reason: 'unavailable' },
+    },
+  },
+});
+```
+
+Profile-free `AgentTraceOptions` still default to metadata-only and support
+`capture: 'content'`; do not combine `capture` with a named profile.
+`onEvent` receives each detached envelope. An optional `createRunId()` supplies
+a unique opaque ID per invocation; otherwise the runner generates one.
+Optional `case` and `codeRevision` identify the versioned experiment. Keep
+identifiers and other metadata non-sensitive even in the `metadata` profile.
+Profiles do not select a renderer, destination, or storage policy.
+
+The terminal reporter is opt-in: the example above writes to stderr so stdout
+can remain machine-readable. With no options it uses `console.log` without
+color; pass `color: true` for ANSI dividers and labels. Product and development
+agents can use the same reporter without changing their tool schemas. Captured
+`decision_summary` and `reason` arguments are display hints, not required fields
+or proof of execution. Only actual rejection and failure events are labeled as
+such. For a custom UI, `formatTerminalTraceEvent(event, { color: false })`
+returns the same text without writing. Start with `metadata` for real assignments;
+the reporter does not redact content on the host's behalf.
+
+Every `start(request)` handle exposes `readTrace()`: a detached snapshot containing
+events, completeness, delivery failures, and model/tool/token metrics. It returns
+`undefined` when tracing is off. `run(request)` also emits to the configured sink,
+but does not expose a handle. Metrics count actual dispatches independently of
+retained events, and missing token usage remains unknown.
+
+### JSONL export
+
+After awaiting the run or host validation (including on failure), take the
+snapshot with `handle.readTrace()`. `serializeAgentTraceJsonl(snapshot)` from
+`@actor-web/agent` emits each retained event followed by one versioned
+`agent.trace.summary` record with the run ID, metrics, completeness, and delivery
+failure count. The summary is present even if limits prevented retaining any
+events. It describes that snapshot, not a business verdict or a durable-delivery
+receipt. Consumers can discriminate event and summary lines by `type`.
+
+The serializer is browser-safe and does not write files, validate untrusted JSON,
+or apply additional redaction. The host chooses where to send or store the
+serialized data. Use either snapshot export or `onEvent` for a given event
+destination to avoid writing duplicate events.
+
+### Validation and capture guarantees
+
+To trace host validation, use `start(request, evidenceBinding)` and call
+`handle.validateOutput(parse, { id, revision })`. The parser runs once against the
+raw result. Existing callers may omit the validator identity, recorded as
+`host-output` / `unversioned`. `createAgent(...).run()` still owns its separate
+portable parser; it does not automatically emit `output.validated`. See the
+[retail analyst](../../examples/retail-analyst/analyst.ts) for the explicit host
+validation path. Parsing and business validation must not depend on retained
+diagnostic events.
+
+Limits default to 256 events, 1 MiB total compact event JSON, and 64 KiB per
+content field (`maxEvents`, `maxBytes`, `maxContentBytes`). A full event buffer
+stops retaining/delivering events and keeps a truthful prefix with a loss reason;
+oversized individual content is explicitly omitted instead. Completeness and
+metrics remain readable outside the bounded buffer.
+
+Optional `redaction: { policyId, redact(value, field) }` applies a synchronous,
+shape-preserving projection to detached content before retention or delivery.
+It must cover every sensitive occurrence, including repeated conversation
+history, not just the task. Redactor exceptions omit content and report capture
+failure. The collector snapshots only plain JSON and does not invoke content
+accessors. Opaque provider continuation state, raw errors, and provider headers
+are excluded; application text is not automatically scrubbed.
+
+Sink mutations and exceptions cannot replace port inputs/results. Sink promises
+are observed for rejection but never awaited; delivery counts can change after
+execution, so snapshots are point-in-time observations, not delivery receipts.
+Keep synchronous sink/redaction work fast: it still consumes wall-clock time.
+No asynchronous flushing, backpressure, or durable-delivery guarantee is implied.
+
+Content fields use `AgentTraceCapture<T>`: `captured` carries a value, `redacted`
+carries a policy-tagged replacement, and `omitted` carries a reason but no value.
+Captured `null`, empty text, or an empty array are actual data, not missing data.
+Use `usage: null` when usage was not reported; absent individual token counts are
+unknown, not zero. A captured request is the normalized agent request, not an
+exact provider-wire recording: opaque `providerState` is deliberately excluded.
+Provider defaults that are unknown must not be invented.
+
+`AgentTraceEvent` specializes `ActorEventEnvelope` as a discriminated union: the
+event `type` determines its nested `payload`. Unlike the flat producer union,
+the nested payload does not repeat `type`. It retains runtime IDs, timestamps,
+correlation and causation, fixes `kind` to `fact` and `schemaVersion` to `1`, and
+adds a host-owned `runId` and one-based, run-local monotonic `sequence`.
+Optional `evidence` links refer to existing execution trace/session/command
+identities and receipts. The trace does not replace `AgentExecutionTrace` or the
+runner's metadata-only execution evidence. A local tool return does not prove
+durable remote execution.
+
+Producers must snapshot plain JSON, exclude credentials and raw SDK errors,
+apply capture/redaction policy before storage, and enforce event/byte limits.
+The type system alone cannot enforce finite numbers, safe integers, valid
+timestamps, identifier uniqueness, deep immutability, or secret removal.
+Preserve an `AgentTraceCompleteness` summary outside the bounded event buffer;
+event loss is distinct from omitted content. Neither missing content nor an
+incomplete stream should silently pass an evaluator that needs that evidence.
+Versioned evaluation scores/findings remain separate records referencing the
+run/events, so saved runs can be re-scored without changing the original facts.
 
 ## Usage
 
@@ -69,35 +245,86 @@ Tests may drive the returned behavior directly, but application code should host
 it through an actor or topology so mailbox, tool access, cancellation, and
 supervision stay under the runtime.
 
-## Portable phase definitions
+## Portable agent specs
 
-`@actor-web/agent/portable` exports `createAgent(runtime, definition)`. Unlike
+<!-- AgentSpec and portable createAgent behavior from src/portable.ts. -->
+
+`AgentSpec<Content, Task, Purpose>` describes a purpose, system prompt, requested
+tools, and output contract (`output` or `parse`). It requests capabilities; the
+host supplies grants and implementations.
+
+`@actor-web/agent/portable` exports `createAgent(runner, spec)`. Unlike
 `createAgentLoopBehavior`, it does not start an actor or drive a tool loop. Each
-call to `run` sends one turn to the supplied executor, forwarding its signal
+call to `run` sends one assignment to the supplied runner, forwarding its signal
 separately from the flat task data, and returns the decoded result. Supply a
 plain data object for the task; `signal` is reserved. The host still owns tool
 grants, cancellation, independent sessions, and acceptance of the candidate.
 
 The [portable tests](tests/portable.test.ts) use supplied functions to exercise
-turn binding, task-aware output checks, and error propagation. A cancellation
-test uses an executor that honors the signal. `createAgent` forwards the
-signal, but does not enforce pre-dispatch abort, reject late output from an
-executor that ignores abort, or wait for cleanup. Those are executor concerns.
+assignment binding, task-aware output checks, and error propagation. A cancellation
+test uses a runner that honors the signal. `createAgent` forwards the
+signal, but does not enforce pre-dispatch abort, reject late output from a
+runner that ignores abort, or wait for cleanup. Those are runner concerns.
 The [specialist execution contract](../../docs/specialist-execution-contract.md)
 specifies what that host must enforce from assignment through settlement.
 
-### Local actor executor
+### In-process agent runner
 
-Import `createActorRuntime` and `ActorRuntimeError` from
-`@actor-web/agent/actor-runtime`. Pass the same trusted `definition` you give
-`createAgent`, including any output instructions. Also supply `provider`,
-`encodeTask`, application tool `grants` and implementations, and `limits`:
+<!-- createAgent, CreateAgentOptions, and createAgentRunner from src/runner.ts; shipment inquiry in ../../examples/ignite-headless-host/logistics-inquiry.ts. -->
+
+Use `startRuntime(shipmentTopology)` to host the shipment lifecycle actors.
+Use the `createAgent` factory for a separate task such as a [shipment inquiry](../../examples/ignite-headless-host/logistics-inquiry.ts):
+
+```ts
+import { createAgent } from '@actor-web/agent/runner';
+
+const inquiry = createAgent({ ...options, spec: inquirySpec });
+const answer = await inquiry.run({ tracking_id: shipmentId, signal });
+```
+
+The factory passes one spec to the trusted runner and portable binding, returning
+a `FocusedAgent` with typed `run(context)` results. `CreateAgentOptions` combines
+the spec with host-owned provider, grants, handlers, limits, and optional runner
+settings. It does not expose execution handles or add retries.
+
+Creating the agent or runner does not start an actor. Each admitted assignment starts
+a fresh in-process specialist; the model provider can be remote. The portable
+`AgentRunner` only requires `run(request)`. The built-in `InProcessAgentRunner`
+also offers `start(request)` for an `AgentRunHandle` with a `result` promise and
+`waitForSettlement(timeoutMs)` for observing local cleanup.
+
+Keep the lower-level construction when you need settlement or evidence handles,
+or use the portable binding with a custom runner:
+
+```ts
+import { createAgent as bindAgent } from '@actor-web/agent/portable';
+import { createAgentRunner } from '@actor-web/agent/runner';
+
+const runner = createAgentRunner({ ...options, spec: inquirySpec });
+const inquiry = bindAgent(runner, inquirySpec);
+```
+
+**Migrating a checkout that used the preview API:** replace
+`createActorRuntime` from `@actor-web/agent/actor-runtime` with `createAgentRunner`
+from `@actor-web/agent/runner`. Rename `AgentDefinition` to `AgentSpec` and the
+runner option `definition` to `spec`. The mismatch error is now `SPEC_MISMATCH`
+instead of `DEFINITION_MISMATCH`. In portable specs use `AgentRunner`,
+`AgentRunRequest`, and `AgentToolDeclaration` in place of `AgentRuntime`,
+`AgentTurn`, and `AgentTool`. In the runner options, an `AgentToolHandler` is
+the trusted implementation, not a declaration or a grant. Other error codes and
+actor messages are unchanged; the error class is now `AgentRunnerError`.
+
+Import `createAgentRunner` and `AgentRunnerError` from
+`@actor-web/agent/runner`. For lower-level construction, pass the same trusted
+`spec` you give the portable `createAgent`, including any output instructions.
+The higher-level factory does this pairing for you. Also supply `provider`,
+`encodeTask` when a custom model-context projection is needed, application tool `grants` and implementations, and `limits`:
 `runTimeoutMs`, `askTimeoutMs`, `providerTimeoutMs`, `toolTimeoutMs`, and
-`maxToolCallsPerBatch`. Existing callers of the unreleased executor must also
+`maxToolCallsPerBatch`. Existing callers of the unreleased runner must also
 supply `maxModelTurns` and `maxPayloadBytes` (positive safe integers) and
 `maxToolAttempts` (a nonnegative safe integer). There are no defaults.
 `askTimeoutMs` is a positive integer capped at 214748364 ms so the 10× local
-correlation fallback fits in the platform timer range. The executor checks its
+correlation fallback fits in the platform timer range. The runner checks its
 active run, ask, provider, and tool deadlines against a monotonic clock.
 If several have elapsed, the
 earliest absolute deadline wins, with the outer operation winning exact ties.
@@ -122,13 +349,67 @@ owns the pinned assignment snapshot, stable callback bindings, and the
 acceptance decision.
 
 Each admitted run owns a new actor and local runtime. Only requested, granted,
-implemented application tools are advertised; `llm` is reserved. The executor
+implemented application tools are advertised; `llm` is reserved. The runner
 checks and snapshots an entire model tool batch before dispatching effects,
 then runs tools in order. Later failures do not undo earlier effects. It
 rejects duplicate IDs within a session and returns only nonblank final assistant
 text. Execution failures reject with a `code`, retaining provider and coded tool
 failures; no retry or repair is attempted. The optional output parser remains
 separate.
+
+### Few-shot tool examples
+
+Import `AgentToolDeclaration` and `AgentToolExample` from `@actor-web/agent/portable`.
+Declare synthetic input/result pairs beside the tool, not in the task prompt:
+
+```ts
+const alerts = {
+  name: 'check_facility_alerts',
+  description: 'Look up active operational alerts for a facility.',
+  parameters: {
+    type: 'object',
+    properties: { facility_name: { type: 'string' } },
+    required: ['facility_name'],
+    additionalProperties: false,
+  },
+  examples: [{ input: { facility_name: 'Example Yard' }, result: { alerts: [] } }],
+} satisfies AgentToolDeclaration;
+```
+
+The local runner's `toolExampleMode` defaults to `'off'`. Set it to
+`'description'` in `createAgentRunner` to append labeled examples **only** to
+requested, granted, implemented tool descriptions. Examples never become tool
+calls, receipts or conversation history. Their rendered bytes count toward
+`maxPayloadBytes` on each model request. Tools without examples are unchanged.
+
+Per tool, the local runner accepts up to four pairs and 4 KiB of compact
+UTF-8 JSON for the whole example array. It checks and snapshots them when
+binding the spec, even when injection is off. `input` must be a plain
+JSON object; `result` can be any plain JSON value. Examples do not invoke
+handlers or validate outputs: check fixtures against your tool's contract in
+tests. Use synthetic data suitable for sending to the provider.
+
+The [Planner read sample](../../examples/portable-specialist/planner-read.ts)
+enables `toolExampleMode: 'description'` for one runner. Its offline demo loads
+the actual `read_plan_file` declaration from `@agent-starter/workflows/planner`
+and supplies an in-memory handler granted one file and line. It checks that the
+provider sees the illustrative `Status: draft.` only in the tool description,
+while reading the assigned file returns `Status: ready.`. It also checks that
+reading the example path or answering from the example fails.
+
+With the two workspaces installed side by side, run from the actor-web root:
+
+```sh
+pnpm --filter @actor-web/runtime build
+pnpm --filter @actor-web/agent build
+pnpm --dir ../agent-starter --filter @agent-starter/workflows... run build
+pnpm --filter @actor-web/example-portable-specialist demo:planner
+```
+
+This uses the local package builds and a scripted provider; it neither starts
+the board/Pi executor nor changes their tool descriptions or grants.
+
+### Execution budgets
 
 Budgets reset for each admitted run and are cumulative within it:
 
@@ -181,14 +462,14 @@ For a browser bundle, statically replace the runtime dependency's
 does not provide a Node `process` shim.
 
 For JSON responses, install `zod@^4` and import `structured` from
-`@actor-web/agent/zod`. Neither the package root, `portable`, nor `actor-runtime`
+`@actor-web/agent/zod`. Neither the package root, `portable`, nor `runner`
 imports Zod.
 Use a synchronous, JSON-representable schema. Its input schema supplies response
 instructions once at construction; after JSON and schema validation, an optional
 `check` receives the typed content and the assignment. Return a reason to reject.
 
 ```ts
-import { createAgent, type AgentRuntime } from '@actor-web/agent/portable';
+import { createAgent, type AgentRunner } from '@actor-web/agent/portable';
 import { structured } from '@actor-web/agent/zod';
 import { z } from 'zod';
 
@@ -207,8 +488,8 @@ const reviewOutput = structured(z.strictObject({ findings: z.array(finding) }), 
   },
 });
 
-function createReviewer(runtime: AgentRuntime<Assignment, 'review'>) {
-  return createAgent(runtime, {
+function createReviewer(runner: AgentRunner<Assignment, 'review'>) {
+  return createAgent(runner, {
     purpose: 'review',
     systemPrompt: 'Review the assigned sources and cite each finding.',
     tools: [],
@@ -225,9 +506,9 @@ const igniteExpertise = {
 ```
 
 `reviewer.run({ files, expertise: igniteExpertise, signal })` invokes the
-executor. `reviewOutput.parse(raw, { files, expertise: igniteExpertise })` instead
+runner. `reviewOutput.parse(raw, { files, expertise: igniteExpertise })` instead
 checks already-produced text without invoking it. An `AgentOutputError` carries
-`invalidJson`, `schemaMismatch`, or `taskMismatch`; executor errors propagate
+`invalidJson`, `schemaMismatch`, or `taskMismatch`; runner errors propagate
 unchanged. No implicit retry, repair, or phase transition occurs.
 
 For a non-JSON protocol use `parse(raw, task)` **instead of** `output`, or pass
@@ -277,6 +558,16 @@ Expected failures are returned as data with reason codes such as:
 
 Unavailable failures are intentionally sanitized. The adapter does not expose
 raw thrown network error text in expected failure facts.
+
+## Typed tools and default task encoding
+
+Import `defineTool` from `@actor-web/agent/zod` to bind a JSON-representable Zod input/output contract to a typed handler. It returns `{ declaration, handler }`: put declarations in the agent definition, handlers in the runner, and grant their names explicitly. The helper normalizes generated schema metadata; the core runner continues to reject unsupported payload values. Input schema validation precedes the optional assignment-specific `check`; output schema validation follows execution. The core and runner entries do not import Zod.
+
+`encodeTask` is optional. Its default accepts plain JSON assignment data and refuses unsupported values, including functions and class instances. Supply an encoder to select the fields the model should see or produce task-specific text. Default encoding sends every enumerable task field, so choose a projection deliberately for assignments with host-only fields. Task encoding does not move credentials or environment access into the runner.
+
+See the [retail analyst example](../../examples/retail-analyst/README.md) for `createAnalyst({ provider })`, scoped tools, a required-observation output check, and opt-in live comparison with a Python regex agent.
+
+For providers that support it, set `parallelToolCalls: false` in `createLlmProvider` to request at most one function call per turn. Omission preserves provider defaults. This maps to `parallel_tool_calls` on Chat Completions and Responses; the runner still independently enforces its batch limit.
 
 ## Live conformance
 
@@ -375,3 +666,11 @@ for the distinction between dispatch, effect outcome, and reconciliation.
 ## License
 
 MIT
+
+## Decision explanations and reasoning summaries
+
+`ActorAgentLlmMessage.content` may accompany native tool calls. Hosts should preserve returned assistant text instead of hiding it when `toolCalls` is nonempty. This text is an explanation, not raw internal reasoning.
+
+For compatible reasoning models on a Responses endpoint, `createLlmProvider({ ..., reasoningSummary: 'auto' })` requests a summary. The adapter returns `message.reasoningSummaries` separately from `content`, and retains `message.providerState` for replay of opaque reasoning items on later Responses turns. The runner validates/detaches and meters this JSON metadata with the message. Evaluation loggers should select summaries and exclude opaque state. Chat Completions rejects this summary configuration rather than silently ignoring it. No model migration or reasoning effort is chosen automatically.
+
+`defineTool` also accepts typed `examples: [{ input, result }]`. It validates examples against the schemas without invoking assignment checks or handlers, then hands declarations to the runner's existing example snapshot/injection path. Enable `toolExampleMode: 'description'` to advertise them. They are illustrative data, not successful observations or grants; task-level validators remain authoritative.

@@ -1,0 +1,32 @@
+{
+  "recordedAt": "2026-11-25T00:05:23.135003+00:00",
+  "methodRevision": "retail-analyst-v3",
+  "modelAlias": "gpt-4.1-mini",
+  "modelCalls": 9,
+  "toolCalls": 8,
+  "structuredSummaries": 8,
+  "analysis": {
+    "date": "2024-01-12",
+    "amount_before_increase": 114,
+    "amount_after_increase": 342,
+    "percentage_increase": 200,
+    "causes": [
+      "Heavy rain conditions may have driven more customers to purchase this product possibly for weather-related needs.",
+      "Flood warning could have caused customers to stock up on the product in advance.",
+      "The adverse weather conditions might have limited access to other stores, increasing demand in available outlets."
+    ]
+  },
+  "usage": {
+    "inputTokens": 14372,
+    "outputTokens": 543
+  },
+  "durationMs": 11455,
+  "checks": {
+    "exampleTestsPassed": 222,
+    "typecheck": "passed",
+    "architecture": "passed",
+    "exampleBuild": "passed",
+    "docsLint": "passed"
+  },
+  "note": "Structured decision summaries are model-authored arguments, not private internal reasoning. Their presence is enforced; semantic faithfulness and causal grounding remain separate evaluations."
+}

@@ -38,7 +38,9 @@
     "examples:dev:local": "vite examples --config examples/vite.config.ts --host 127.0.0.1 --port 4173",
     "examples:queue-board": "node scripts/dev-queue-board.mjs",
     "examples:logistics": "vite-node --config examples/vite.config.ts scripts/dev-logistics-demo.ts",
+    "examples:logistics:prompt": "NODE_ENV=production vite-node --config examples/vitest.config.ts examples/ignite-headless-host/logistics-prompt-demo.ts",
     "examples:parallel-teams": "vite-node --config examples/vitest.config.ts examples/parallel-sdlc-teams/demo.ts",
+    "examples:parallel-teams:loopback": "vite-node --config examples/vitest.config.ts examples/parallel-sdlc-teams/loopback/demo.ts",
     "examples:logistics:server": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-server-process.ts",
     "examples:logistics:worker": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-worker-process.ts",
     "examples:logistics:provider": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-provider-process.ts",
@@ -66,7 +68,11 @@
     "release": "pnpm release:stable",
     "release:prepare": "node scripts/release.mjs --channel stable --prepare-only",
     "release:stable": "node scripts/release.mjs --channel stable",
-    "release:beta": "node scripts/release.mjs --channel beta"
+    "release:beta": "node scripts/release.mjs --channel beta",
+    "examples:analyst": "pnpm --filter @actor-web/example-retail-analyst demo",
+    "examples:analyst:live": "pnpm --filter @actor-web/example-retail-analyst live",
+    "examples:investigation": "pnpm --filter @actor-web/example-retail-investigation demo",
+    "examples:investigation:evaluate": "pnpm --filter @actor-web/example-retail-investigation evaluate"
   },
   "keywords": [
     "actor-model",
@@ -105,7 +111,8 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
     "vitest": "^2.1.4",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "xstate": "5.30.0"
   },
   "engines": {
     "node": ">=20.0.0"

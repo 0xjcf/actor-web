@@ -1,15 +1,15 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig([
-  { entry: ['src/index.ts'], format: ['cjs', 'esm'] },
+  { entry: ['src/index.ts', 'src/terminal.ts'], format: ['cjs', 'esm'] },
   {
     entry: ['src/portable.ts', 'src/zod.ts'],
     format: ['cjs', 'esm'],
     external: ['zod'],
-    dts: { compilerOptions: { composite: false } },
+    dts: { compilerOptions: { composite: false, paths: {} } },
   },
   {
-    entry: ['src/actor-runtime.ts'],
+    entry: ['src/runner.ts'],
     format: ['cjs', 'esm'],
     platform: 'browser',
   },

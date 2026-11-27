@@ -1,10 +1,10 @@
 import type { ActorAgentLlmProvider } from '@actor-web/agent';
-import {
-  ActorRuntimeError,
-  type ActorRuntimeEvidenceBinding,
-  createActorRuntime,
-} from '@actor-web/agent/actor-runtime';
 import { createAgent } from '@actor-web/agent/portable';
+import {
+  type AgentRunEvidenceBinding,
+  AgentRunnerError,
+  createAgentRunner,
+} from '@actor-web/agent/runner';
 import { structured } from '@actor-web/agent/zod';
 import { z } from 'zod';
 
@@ -31,7 +31,7 @@ const readSource = {
   },
 };
 
-const definition = {
+const spec = {
   purpose: 'review' as const,
   systemPrompt: 'Review the supplied sources and cite the relevant excerpt.',
   tools: [readSource],
@@ -56,11 +56,11 @@ function prepareReview(
   };
   const sources = new Map(snapshot.files.map(({ path, source }) => [path, source]));
   if (sources.size !== snapshot.files.length) {
-    throw new ActorRuntimeError('INVALID_ASSIGNMENT', 'Assigned paths must be unique.');
+    throw new AgentRunnerError('INVALID_ASSIGNMENT', 'Assigned paths must be unique.');
   }
 
-  const runtime = createActorRuntime<Assignment, 'review'>({
-    definition,
+  const runner = createAgentRunner<Assignment, 'review'>({
+    spec,
     provider,
     grants: [readSource.name],
     tools: [
@@ -69,13 +69,10 @@ function prepareReview(
         validateInput(input) {
           const result = readSourceInput.safeParse(input);
           if (!result.success) {
-            throw new ActorRuntimeError('INVALID_TOOL_INPUT', 'Expected one source path.');
+            throw new AgentRunnerError('INVALID_TOOL_INPUT', 'Expected one source path.');
           }
           if (!sources.has(result.data.path)) {
-            throw new ActorRuntimeError(
-              'PATH_DENIED',
-              'The path is not in the assigned inventory.'
-            );
+            throw new AgentRunnerError('PATH_DENIED', 'The path is not in the assigned inventory.');
           }
           return { value: result.data.path };
         },
@@ -108,7 +105,7 @@ function prepareReview(
       maxPayloadBytes: 64 * 1024,
     },
   });
-  return { runtime, agent: createAgent(runtime, definition), snapshot, signal };
+  return { runner, agent: createAgent(runner, spec), snapshot, signal };
 }
 
 export async function runSourceReview(
@@ -125,17 +122,17 @@ export async function runSourceReview(
 export function startSourceReview(
   assignment: Assignment,
   options: ReviewOptions,
-  binding: ActorRuntimeEvidenceBinding
+  binding: AgentRunEvidenceBinding
 ) {
   const {
-    runtime,
+    runner,
     agent: { purpose, systemPrompt, tools },
     snapshot,
     signal,
   } = prepareReview(assignment, options);
-  const handle = runtime.start({ purpose, systemPrompt, tools, task: snapshot, signal }, binding);
+  const handle = runner.start({ purpose, systemPrompt, tools, task: snapshot, signal }, binding);
   const result = handle
-    .validateOutput((raw) => definition.output.parse(raw, snapshot))
+    .validateOutput((raw) => spec.output.parse(raw, snapshot))
     .then((finding) => {
       signal.throwIfAborted();
       return finding;

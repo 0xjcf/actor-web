@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="530" viewBox="0 0 1000 530" role="img" aria-labelledby="title desc">
+  <title id="title">Sprint 2: three Actor-Web nodes on one machine</title>
+  <desc id="desc">Two workers dial the control node over authenticated loopback WebSockets. Each checks its own candidate and keeps its own execution claim, count and receipt. Control admits receipts by source and binding. Its private task owner decides and its team claims Review. The browser reads one workspace per credential from a separate gateway. The launcher uses private IPC, not the check or receipt channel. No VM is involved.</desc>
+  <defs>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; fill: #15263d; font-size: 16px; }
+      .title { font-size: 30px; font-weight: 700; }
+      .heading { font-size: 20px; font-weight: 700; }
+      .note { font-size: 14px; fill: #42566c; }
+      .edge { fill: none; stroke: #455d73; stroke-width: 2; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#455d73"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="530" fill="#f7f9fb"/>
+  <text x="32" y="46" class="title">Three runtime nodes on loopback</text>
+  <g transform="translate(32,72)">
+    <rect width="450" height="75" rx="8" fill="#edf5fc" stroke="#90b4d4"/>
+    <text x="16" y="30" class="heading">Browser · read-only gateway</text>
+    <text x="16" y="56">Each viewer credential reads one workspace.</text>
+  </g>
+  <g transform="translate(518,72)">
+    <rect width="450" height="75" rx="8" fill="white" stroke="#acbac7"/>
+    <text x="16" y="30" class="heading">Launcher · private IPC to the three nodes</text>
+    <text x="16" y="56">Starts the run or requests lookup; never relays receipts.</text>
+  </g>
+  <path class="edge" d="M257 182 V148" marker-end="url(#arrow)"/>
+  <path class="edge" d="M743 148 V182" marker-end="url(#arrow)"/>
+  <g transform="translate(32,184)">
+    <rect width="936" height="128" rx="10" fill="#eaf6f1" stroke="#86b8a6"/>
+    <text x="16" y="30" class="heading">Control · sdlc-control</text>
+    <text x="16" y="58">Peer adapter: authenticated source selects the lane; the receipt must match its pinned binding.</text>
+    <text x="16" y="84">Private actors: the owner accepts or holds the check; the team claims the handoff before starting Review.</text>
+    <text x="16" y="110">Per-lane checkpoint: pinned attempt, decision, pending handoff, team claim and stage records.</text>
+  </g>
+  <path class="edge" d="M257 314 V373" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <path class="edge" d="M743 314 V373" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="500" y="338" text-anchor="middle">Authenticated peer WebSockets</text>
+  <text x="500" y="359" class="note" text-anchor="middle">Execute or look up → worker; receipt or miss → control</text>
+  <g transform="translate(32,375)">
+    <rect width="450" height="101" rx="9" fill="#fff5e5" stroke="#cea768"/>
+    <text x="16" y="30" class="heading">Checkout worker · checkout-host</text>
+    <text x="16" y="57">checkout@3 · checkout-workspace · local, generation 2</text>
+    <text x="16" y="82">Host records: execution claim, count and receipt.</text>
+  </g>
+  <g transform="translate(518,375)">
+    <rect width="450" height="101" rx="9" fill="#fff5e5" stroke="#cea768"/>
+    <text x="16" y="30" class="heading">Profile worker · profile-host</text>
+    <text x="16" y="57">profile@1 · profile-workspace · cloud, generation 1</text>
+    <text x="16" y="82">Host records: execution claim, count and receipt.</text>
+  </g>
+  <text x="32" y="509" class="note">“Local” and “cloud” name executor bindings. Both workers run a UTF-8 label check in a Node.js process, not a guest VM.</text>
+</svg>

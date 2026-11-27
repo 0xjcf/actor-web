@@ -1,6 +1,6 @@
 {
   "name": "@actor-web/agent",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "LLM tool and agent-loop utilities for actor-web runtime hosts",
   "type": "module",
   "main": "dist/index.cjs",
@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "build": "tsc --emitDeclarationOnly && tsup && node scripts/write-cjs-types.mjs && node ../../scripts/verify-exports.mjs . && pnpm test:public-entries",
-    "test:public-entries": "tsc --noEmit --strict --module node16 --target es2022 tests/consume-portable.mts tests/consume-portable.cts && node tests/verify-portable.mjs && node tests/verify-actor-runtime.mjs",
+    "test:public-entries": "tsc --noEmit --strict --module node16 --target es2022 tests/consume-portable.mts tests/consume-portable.cts && node tests/verify-portable.mjs && node tests/verify-runner.mjs",
     "build:watch": "pnpm build --watch",
     "dev": "vitest --watch",
     "test": "vitest run",
@@ -88,14 +88,24 @@
         "default": "./dist/portable.cjs"
       }
     },
-    "./actor-runtime": {
+    "./runner": {
       "import": {
-        "types": "./dist/actor-runtime.d.ts",
-        "default": "./dist/actor-runtime.js"
+        "types": "./dist/runner.d.ts",
+        "default": "./dist/runner.js"
       },
       "require": {
-        "types": "./dist/actor-runtime.d.cts",
-        "default": "./dist/actor-runtime.cjs"
+        "types": "./dist/runner.d.cts",
+        "default": "./dist/runner.cjs"
+      }
+    },
+    "./terminal": {
+      "import": {
+        "types": "./dist/terminal.d.ts",
+        "default": "./dist/terminal.js"
+      },
+      "require": {
+        "types": "./dist/terminal.d.cts",
+        "default": "./dist/terminal.cjs"
       }
     },
     "./zod": {

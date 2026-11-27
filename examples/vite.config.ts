@@ -191,6 +191,8 @@ export default defineConfig(() => {
         input: {
           index: path.resolve(currentDir, 'index.html'),
           parallelTeams: path.resolve(currentDir, 'parallel-sdlc-teams/index.html'),
+          heldReceipt: path.resolve(currentDir, 'parallel-sdlc-teams/held-receipt.html'),
+          loopbackReceipt: path.resolve(currentDir, 'parallel-sdlc-teams/loopback.html'),
           fasAgentLoop: path.resolve(currentDir, 'fas-agent-loop/index.html'),
           igniteHeadlessHost: path.resolve(currentDir, 'ignite-headless-host/index.html'),
           igniteHeadlessProvider: path.resolve(currentDir, 'ignite-headless-host/provider.html'),

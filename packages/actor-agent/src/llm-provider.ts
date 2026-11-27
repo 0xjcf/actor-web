@@ -1,3 +1,4 @@
+import type { JsonValue } from '@actor-web/runtime';
 import { ActorToolTimeoutError } from '@actor-web/runtime/browser';
 import type {
   ActorAgentError,
@@ -7,13 +8,17 @@ import type {
   ActorAgentLlmResult,
   ActorAgentTokenUsage,
   ActorAgentToolCall,
-  ActorAgentToolDefinition,
+  ModelToolDefinition,
 } from './index.js';
 
 export interface LlmProviderOptions {
   readonly endpoint: string;
   readonly model: string;
   readonly timeoutMs?: number;
+  /** Omit to preserve provider defaults; false requests at most one tool call per turn. */
+  readonly parallelToolCalls?: boolean;
+  /** Opt-in summary request for compatible reasoning models on a Responses endpoint. */
+  readonly reasoningSummary?: 'auto' | 'concise' | 'detailed';
   readonly headers?: Record<string, string>;
   readonly credentials?: RequestCredentials;
   readonly fetch?: typeof globalThis.fetch;
@@ -161,7 +166,7 @@ function toWireMessages(request: ActorAgentLlmRequest): readonly OpenAiCompatibl
   return wireMessages;
 }
 
-function toWireTools(toolDefinitions: readonly ActorAgentToolDefinition[] | undefined):
+function toWireTools(toolDefinitions: readonly ModelToolDefinition[] | undefined):
   | readonly {
       readonly type: 'function';
       readonly function: {
@@ -185,9 +190,9 @@ function toWireTools(toolDefinitions: readonly ActorAgentToolDefinition[] | unde
 }
 
 function filterAuthorizedToolDefinitions(
-  toolDefinitions: readonly ActorAgentToolDefinition[] | undefined,
+  toolDefinitions: readonly ModelToolDefinition[] | undefined,
   allowedTools: ReadonlySet<string>
-): readonly ActorAgentToolDefinition[] | undefined {
+): readonly ModelToolDefinition[] | undefined {
   if (!toolDefinitions || toolDefinitions.length === 0) {
     return undefined;
   }
@@ -417,6 +422,7 @@ function parseAssistantMessage(
 }
 
 type ResponsesInputItem =
+  | { readonly type: 'reasoning'; readonly [key: string]: unknown }
   | { readonly role: 'user' | 'assistant'; readonly content: string }
   | {
       readonly type: 'function_call';
@@ -452,6 +458,9 @@ function toResponsesInput(request: ActorAgentLlmRequest): readonly ResponsesInpu
     if (message.role !== 'assistant') {
       continue;
     }
+    for (const item of message.providerState?.reasoningItems ?? []) {
+      if (isRecord(item) && item.type === 'reasoning') input.push({ ...item, type: 'reasoning' });
+    }
     if (message.content.length > 0) {
       input.push({ role: 'assistant', content: message.content });
     }
@@ -467,7 +476,7 @@ function toResponsesInput(request: ActorAgentLlmRequest): readonly ResponsesInpu
   return input;
 }
 
-function toResponsesTools(toolDefinitions: readonly ActorAgentToolDefinition[] | undefined):
+function toResponsesTools(toolDefinitions: readonly ModelToolDefinition[] | undefined):
   | readonly {
       readonly type: 'function';
       readonly name: string;
@@ -591,8 +600,16 @@ function parseResponsesPayload(
 
   const textParts: string[] = [];
   const toolCalls: ActorAgentToolCall[] = [];
+  const reasoningSummaries: string[] = [];
+  const reasoningItems: JsonValue[] = [];
   for (const item of payload.output) {
-    if (!isRecord(item) || item.type === 'reasoning') {
+    if (!isRecord(item)) continue;
+    if (item.type === 'reasoning') {
+      for (const part of Array.isArray(item.summary) ? item.summary : []) {
+        if (isRecord(part) && part.type === 'summary_text' && typeof part.text === 'string')
+          reasoningSummaries.push(part.text);
+      }
+      if (typeof item.id === 'string') reasoningItems.push(item as JsonValue);
       continue;
     }
     if (item.type === 'message') {
@@ -622,6 +639,10 @@ function parseResponsesPayload(
   const message: ActorAgentLlmMessage = {
     role: 'assistant',
     content,
+    ...(reasoningSummaries.length ? { reasoningSummaries } : {}),
+    ...(reasoningItems.length
+      ? { providerState: { format: 'openai-responses' as const, reasoningItems } }
+      : {}),
     ...(toolCalls.length === 0 ? {} : { toolCalls }),
   };
   const usage = mapResponsesUsage(payload);
@@ -636,6 +657,9 @@ function parseResponsesPayload(
 
 export function createLlmProvider(input: LlmProviderOptions): ActorAgentLlmProvider {
   const providerTimeoutMs = resolveProviderTimeoutMs(input.timeoutMs);
+  if (input.reasoningSummary !== undefined && !isResponsesEndpoint(input.endpoint)) {
+    throw new Error('Reasoning summaries require a Responses endpoint.');
+  }
   return async (request, context) => {
     const fetchImpl = resolveFetch(input);
     if (!fetchImpl) {
@@ -660,16 +684,31 @@ export function createLlmProvider(input: LlmProviderOptions): ActorAgentLlmProvi
       ? {
           model: input.model,
           input: toResponsesInput(request),
+          ...(input.reasoningSummary === undefined
+            ? {}
+            : { reasoning: { summary: input.reasoningSummary } }),
           ...(request.system === undefined ? {} : { instructions: request.system }),
           ...(responsesTools && responsesTools.length > 0
-            ? { tools: responsesTools, tool_choice: 'auto' as const }
+            ? {
+                tools: responsesTools,
+                tool_choice: 'auto' as const,
+                ...(input.parallelToolCalls === undefined
+                  ? {}
+                  : { parallel_tool_calls: input.parallelToolCalls }),
+              }
             : {}),
         }
       : {
           model: input.model,
           messages: toWireMessages(request),
           ...(chatTools && chatTools.length > 0
-            ? { tools: chatTools, tool_choice: 'auto' as const }
+            ? {
+                tools: chatTools,
+                tool_choice: 'auto' as const,
+                ...(input.parallelToolCalls === undefined
+                  ? {}
+                  : { parallel_tool_calls: input.parallelToolCalls }),
+              }
             : {}),
         };
 
