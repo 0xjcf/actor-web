@@ -64,7 +64,7 @@ export function defineTool<
     readonly input: z.input<Input>;
     readonly result: z.input<Output>;
   }[];
-  /** Assignment-specific authorization, after schema validation and before effects. */
+  /** Synchronous assignment-specific authorization. Throw to refuse; promises are not accepted. */
   readonly check?: (input: z.output<Input>, task: Task) => void;
   readonly execute: (
     input: z.output<Input>,
@@ -90,7 +90,17 @@ export function defineTool<
       name,
       validateInput(value, task) {
         const parsed = input.parse(value);
-        check?.(parsed, task);
+        const checked: unknown = check?.(parsed, task);
+        if (
+          checked !== null &&
+          (typeof checked === 'object' || typeof checked === 'function') &&
+          'then' in checked &&
+          typeof checked.then === 'function'
+        ) {
+          // Observe a late rejection, but never treat async settlement as authorization.
+          void Promise.resolve(checked).catch(() => {});
+          throw new TypeError('Tool authorization checks must be synchronous.');
+        }
         return { value: parsed };
       },
       async execute(value, task, context) {

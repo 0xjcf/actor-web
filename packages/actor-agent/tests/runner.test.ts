@@ -23,7 +23,7 @@ import {
   type ObservedAgentRunHandle,
 } from '../src/runner.js';
 import { createExecutionEvidence } from '../src/runner-evidence.js';
-import { structured } from '../src/zod.js';
+import { defineTool, structured } from '../src/zod.js';
 
 vi.mock('@actor-web/runtime/browser', async (importOriginal) => {
   const runtime = await importOriginal<typeof import('@actor-web/runtime/browser')>();
@@ -1628,6 +1628,41 @@ describe('local actor runtime runner', () => {
     }
   );
 
+  it.each(['fulfill', 'reject', 'thenable'] as const)(
+    'refuses the whole batch before effects when a tool check is async (%s)',
+    async (settlement) => {
+      const pending = deferred();
+      const subscribed = vi.fn();
+      const check = vi.fn((input: { path: string }) => {
+        if (input.path === 'first') return;
+        return settlement === 'thenable'
+          ? promiseWrapper(pending.promise, subscribed)
+          : pending.promise;
+      });
+      const execute = vi.fn(() => 'ok');
+      const tool = defineTool({
+        name: 'read',
+        description: 'Read an assigned path.',
+        input: z.object({ path: z.string() }),
+        output: z.string(),
+        check,
+        execute,
+      });
+      const provider = vi.fn<ActorAgentLlmProvider>(() =>
+        assistant('', [call('one', 'read', { path: 'first' }), call('two')])
+      );
+      const runtime = fixture(provider, { tools: [tool.handler] }).make();
+      try {
+        await expect(runtime.run(turn())).rejects.toMatchObject({ code: 'INVALID_TOOL_INPUT' });
+        expect(check).toHaveBeenCalledTimes(2);
+        expect(execute).not.toHaveBeenCalled();
+        if (settlement === 'thenable') expect(subscribed).toHaveBeenCalledOnce();
+      } finally {
+        if (settlement === 'fulfill') pending.resolve();
+        else pending.reject(new Error('refused'));
+      }
+    }
+  );
   const nonDataGetter = vi.fn(() => 'not plain data');
   const cyclic: { self?: unknown } = {};
   cyclic.self = cyclic;
