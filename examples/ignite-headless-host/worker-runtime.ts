@@ -3,8 +3,8 @@
 import {
   createMessagePortTransport,
   type MessagePortTransport,
-  type StartedActorWebNode,
-  startActorWebNode,
+  type StartedNode,
+  startNode,
 } from '@actor-web/runtime/browser';
 import { logistics } from './logistics-topology';
 import {
@@ -18,7 +18,7 @@ const serviceWorkerNode = logistics.nodes.serviceWorker.address;
 
 class LogisticsServiceWorkerRuntime {
   private transport: MessagePortTransport | null = null;
-  private runtimeNode: StartedActorWebNode<typeof logistics, MessagePortTransport> | null = null;
+  private runtimeNode: StartedNode<typeof logistics, MessagePortTransport> | null = null;
   private shutdownPromise: Promise<void> | null = null;
   private lifecycleGeneration = 0;
 
@@ -33,9 +33,9 @@ class LogisticsServiceWorkerRuntime {
     });
     this.transport = transport;
 
-    let startedNode: StartedActorWebNode<typeof logistics, MessagePortTransport>;
+    let startedNode: StartedNode<typeof logistics, MessagePortTransport>;
     try {
-      startedNode = await startActorWebNode(logistics, {
+      startedNode = await startNode(logistics, {
         node: 'serviceWorker',
         transport,
       });

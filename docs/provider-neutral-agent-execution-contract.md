@@ -2,12 +2,16 @@
 
 ## Contract surface
 
-- Runtime source of truth: `@actor-web/runtime` `0.2.0`
-  - source module: `packages/actor-core-runtime/src/agent-execution-contract.ts`
-- Testing fixture and assertion surface: `@actor-web/testing` `0.2.0`
-  - source module: `packages/actor-core-testing/src/agent-execution-conformance.ts`
+- Runtime source of truth: [`@actor-web/runtime`](../packages/actor-core-runtime/src/index.ts)
+  exports the [execution contract](../packages/actor-core-runtime/src/agent-execution-contract.ts).
+- [`@actor-web/testing`](../packages/actor-core-testing/src/index.ts) exports the
+  [conformance fixtures and assertions](../packages/actor-core-testing/src/agent-execution-conformance.ts).
 - Contract version: `1`
 - Schema version: `1`
+
+The equivalent public entries are present in the repository's
+`@actor-web/runtime@0.2.1` and `@actor-web/testing@0.2.1` tags. Package versions,
+contract versions, and production qualification are separate.
 
 ### Exported runtime contract helpers
 
@@ -54,11 +58,11 @@
 - `AgentExecutionIdempotencyClaimPort`
   - provider-neutral duplicate-claim or duplicate-check surface at the admission seam
   - if command metadata carries `idempotencyKey`, command admission must fail closed unless this adapter is configured
-  - current candidate behavior rejects duplicate idempotency keys before dispatch
-  - authorized available claims now settle explicitly as `not_dispatched`, `dispatch_succeeded`, or `dispatch_indeterminate`
-  - durable restart-safe duplicate recovery is deferred to checkpoint and rehydration work
+  - a duplicate reported by the configured claim port is rejected before dispatch
+  - authorized claims settle as `not_dispatched`, `dispatch_succeeded`, or `dispatch_indeterminate`
+  - these outcomes describe dispatch, not whether a remote effect committed
 - gateway transport surface
-  - `ActorWebNodeGatewayOptions.commandAdmission`
+  - `NodeGatewayOptions.commandAdmission`
   - `RuntimeGatewayClientFrame.send.metadata`
   - `RuntimeGatewayClientFrame.ask.metadata`
   - `RuntimeGatewayServerFrame.ack.authorization`
@@ -80,31 +84,41 @@
 
 ## Maturity
 
-- Current
-  - legacy Actor-Web surfaces such as `ActorEventEnvelope` and the effect journal remain valid compatibility inputs, but they are not by themselves the canonical execution-trace contract
-- Accepted target
-  - one provider-neutral, JSON-safe contract that distinguishes command admission, execution authorization, persisted effect intent, effect attempt or outcome, reconciliation, and stale projection
-- Candidate
-  - the current source contract in `packages/actor-core-runtime/src/agent-execution-contract.ts` and source fixture surface in `packages/actor-core-testing/src/agent-execution-conformance.ts`
-  - candidate only until full gate, independent review, human review, merge, and downstream reconfirmation complete
-- Deferred
-  - npm publication and release-level contract claiming remain deferred until `task-1785250788704`
+- **Available:** Version 1 distinguishes admission, authorization, persisted
+  effect intent, attempts and outcomes, reconciliation, and stale projections.
+  Legacy `ActorEventEnvelope` and effect-journal records are compatibility inputs,
+  not execution traces on their own.
+- **Covered:** [Contract tests](../packages/actor-core-runtime/src/unit/agent-execution-contract.test.ts)
+  exercise trace validation and admission;
+  [gateway tests](../packages/actor-core-runtime/src/unit/runtime-gateway.test.ts)
+  cover opt-in admission before dispatch, including refusal and claim settlement;
+  [fixture tests](../packages/actor-core-testing/src/agent-execution-conformance.test.ts)
+  validate deterministic receipt scenarios. The fixtures retain their candidate
+  metadata and do not qualify a live executor or deployment.
+- **Not established:** Restart-safe duplicate suppression, cross-process owner
+  fencing, and exactly-once external effects. A serializable receipt or checkpoint
+  is not proof that a host persisted it across a crash or that an external action
+  did or did not run.
+
+The [Actor-Web M1 backlog](todos.md) tracks the next local specialist proof.
+The dated results below apply only to their recorded subjects.
 
 ## Ownership boundary
 
-- Actor-Web owns:
-  - authoritative runtime lifecycle facts and receipts
-  - contract vocabulary and validation behavior
-  - restart, replay, reconciliation, and duplicate-suppression semantics
-- FAS owns:
-  - evidence normalization
-  - workflow and review policy
-  - no application behavior authority
-- Ignite Element owns:
-  - semantic projection and intent-command binding
-  - no execution authority
-- Integrations remain optional and additive. No FAS-specific or Ignite-specific runtime semantics are embedded in the Actor-Web contract.
-- `@actor-web/agent` is unchanged in this task and does not define alternate contract vocabulary.
+- **Actor-Web** owns runtime lifecycle, enforcement of declared grants,
+  authoritative runtime facts and receipts, and contract validation.
+- **The trusted host** supplies policy, tool implementations, storage, and
+  authoritative evidence needed to reconcile uncertain external effects.
+- **Agent-starter** owns workflow decisions: task and role selection, workflow
+  gates, and review policy. Those decisions do not replace runtime authorization
+  or make model output an execution receipt.
+- **Ignite Element** owns its projection and intent-command binding, not runtime
+  execution. Consumers should treat runtime receipts as authoritative facts,
+  preserve the join keys, and reject unsupported or invalid traces.
+
+Integrations are optional. The contract does not depend on agent-starter,
+Ignite Element, or the retired FAS workflow. `@actor-web/agent` provides agent
+utilities, not an alternate execution-receipt contract.
 
 ## Lifecycle vocabulary
 
@@ -126,9 +140,9 @@
 - `retry`
   - records a retry decision without claiming a duplicate irreversible effect
 - `timeout`
-  - records a timeout as a durable fact; timeout is recoverable and may be followed by retry and later success
+  - records a timeout, not effect settlement; the trace may include a later retry and success
 - `cancellation`
-  - records interruption or cancellation
+  - records interruption or cancellation; an abort request alone does not establish cleanup or rollback
 - `reconciliation`
   - records replay or duplicate suppression outcomes
 - `projection`
@@ -171,7 +185,9 @@ These identities stay distinct. The contract does not collapse intent, authoriza
   - `credential`
 - Prompt-like keys are redacted as `[redacted:prompt]`
   - `prompt`
-- Redaction preserves join-key and audit utility. The contract does not expose raw secrets or prompt payloads in fixtures or receipts.
+- [Key-based redaction](../packages/actor-core-runtime/src/agent-execution-contract.ts)
+  preserves join keys but does not sanitize arbitrary text. Hosts must keep raw
+  secrets and prompts out of receipt fields not covered by these rules.
 
 ## Supported and unsupported behavior
 
@@ -190,7 +206,9 @@ These identities stay distinct. The contract does not collapse intent, authoriza
 
 ## Semantics
 
-- Models propose intent; Actor-Web alone validates, authorizes, transitions, persists, executes, checkpoints, resumes, reconciles, and emits authoritative facts or receipts.
+- Models propose intent; Actor-Web validates, applies configured admission policy,
+  and dispatches through runtime and host ports. Model text is not an authoritative
+  runtime fact.
 - Capability discovery is descriptive only and never substitutes for execution-time authorization.
 - Legacy compatibility remains versioned and additive: if a host does not opt into `commandAdmission`, existing command dispatch behavior may continue without additive admission receipts.
 - Once a host opts into `commandAdmission`, Actor-Web requires an explicit policy adapter, rechecks command, payload, principal, approval, revision, idempotency, and policy, and fails closed on missing policy or adapter failure.
@@ -203,15 +221,30 @@ These identities stay distinct. The contract does not collapse intent, authoriza
 - Local and system-internal command paths use explicit trusted principals and the same admission helper, with bypass semantics expressed as facts instead of an implicit shortcut.
 - Served gateway ingress requires an explicit principal resolver when `commandAdmission` is enabled.
 - Local or CLI host ingress requires an explicit trusted principal when `commandAdmission` is enabled.
-- Opted-in admission requires a durable `onDecision` sink before dispatch; sink failure settles any claimed idempotency key as `not_dispatched` and fails closed.
+- Opted-in admission requires a configured `onDecision` sink before dispatch.
+  Sink failure settles any claimed idempotency key as `not_dispatched` and fails
+  closed. The host is responsible for the sink's durability.
 - After a sinked authorization, successful dispatch settles claimed idempotency as `dispatch_succeeded`; dispatch failure after authorization settles it as `dispatch_indeterminate`.
-- A duplicate idempotency key at the current admission seam is rejected before actor send or ask dispatch unless a later checkpoint or rehydration seam introduces a join-capable durable outcome.
+- A duplicate reported by the claim port is rejected before actor send or ask
+  dispatch. Whether claims survive a restart depends on the host's implementation.
 - Persisted effect intent is separate from effect attempt or outcome where atomicity matters.
 - External execution is nondeterministic.
-- The contract supports restart, replay, reconciliation, and no duplicate irreversible effects.
-- The current task does not claim durable duplicate prevention across restart; exactly-once external execution remains out of scope.
+- The [rehydration helper](../packages/actor-core-runtime/src/agent-session-checkpoint-store.ts)
+  defers recovery for a readable checkpoint with unresolved irreversible effect
+  intent rather than assuming the effect ran or replaying it. The
+  [checkpoint tests](../packages/actor-core-runtime/src/unit/agent-session-checkpoint-store.test.ts)
+  cover this decision and same-process filesystem write coordination. A host
+  sharing the store across processes must enforce single-writer ownership.
+- The [toolbox timeout test](../packages/actor-core-runtime/src/unit/actor-tools.test.ts)
+  exercises a caller receiving `ACTOR_TOOL_TIMEOUT` and the tool receiving an
+  aborted signal. The timeout races the tool's promise; it does not wait for
+  underlying work to settle or prove remote effects stopped.
 
-## Verification receipts
+## Historical verification receipts
+
+This section and the downstream checklist below record the July 2026 effort.
+FAS references and pending items here describe that effort, not the current
+workflow or release gates.
 
 Focused post-review checks completed on July 29, 2026 at implementation head `93a12d58`:
 
@@ -267,7 +300,7 @@ Still pending before maturity can advance beyond candidate:
 - human final review and merge
 - downstream reconfirmation in Ignite Element and FAS
 
-## Downstream reconfirmation
+## Historical downstream reconfirmation checklist
 
 No Ignite Element or FAS repository edits were performed in this task.
 

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { type ActorAddress, Address, parse } from '../browser.js';
 
 const IMPORT_PATTERN = /(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/g;
 
@@ -44,6 +45,12 @@ async function collectImportGraph(entrypoint: string): Promise<Map<string, strin
 }
 
 describe('browser entrypoint import graph', () => {
+  it('exposes the same branded address format without using the root entrypoint', () => {
+    const address: ActorAddress = Address.from({ id: 'routing', node: 'worker' });
+    expect(address).toBe('actor://worker/routing');
+    expect(parse(address)).toEqual({ id: 'routing', kind: 'actor', node: 'worker' });
+  });
+
   it('does not reach node crypto shims', async () => {
     const entrypoint = fileURLToPath(new URL('../browser.ts', import.meta.url));
     const graph = await collectImportGraph(entrypoint);

@@ -1,5 +1,21 @@
 # @actor-web/runtime
 
+## 0.4.0
+
+### Minor Changes
+
+- Prefer `defineTopology`, `startNode`, `serveHttp`, `createClient`, `createReadModelClient`, `createGatewaySource`, `createGatewayCommandSource`, `createGatewayReadModelSource`, `createGatewayTraceSource`, and `createSourceHandle` on their existing entry points. Related types have shorter names, including `Topology`, `StartedNode`, and `ActorMessageOf<T>`. Prior names remain available as deprecated aliases.
+- Declare a command and its reply with `ActorRequest<Message, Reply>`, extract the reply with `ReplyOf<Message>`, and call `ask(ref, command)` from the root or browser entry to infer the reply. This adds no wire fields or runtime validation; `ref.ask()` is unchanged.
+
+- Import the flat XState v5 JSON validator from `@actor-web/runtime/definition` to check a definition against explicit size, depth, state and transition limits and a supplied action/guard manifest. Validation does not execute a machine, authorize effects or verify binding implementations. The existing `@actor-web/runtime/source` entry remains available.
+
+  Use `ask` on actor dependencies to request a reply from an actor reference or address. In browser hosts, the request runs inside the caller's open turn so the target can reply.
+
+### Patch Changes
+
+- 54e673f: Cancel the fallback correlation timer when a local actor ask reaches its deadline, so it no longer keeps the process alive after the request settles.
+- Deprecate `createActor`, which returns its behavior argument unchanged. Pass the behavior directly or use `defineBehavior` to author one; use `system.spawn` to start an actor.
+
 ## 0.3.0
 
 ### Minor Changes

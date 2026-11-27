@@ -9,6 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const packageRoot = resolve(__dirname, '..');
 const repoRoot = resolve(packageRoot, '../..');
+const releaseBase = 'origin/main';
 
 type CliPackageManifest = {
   name: string;
@@ -32,6 +33,7 @@ type ChangesetConfig = {
 type ChangesetStatus = {
   releases: Array<{
     name: string;
+    type: 'none' | 'patch' | 'minor' | 'major';
     oldVersion: string;
     newVersion: string;
     changesets: string[];
@@ -106,7 +108,7 @@ async function readChangesetStatus(manifestVersion: string): Promise<ChangesetSt
   try {
     await runCommand(
       'pnpm',
-      ['exec', 'changeset', 'status', '--since=origin/main', `--output=${statusFile}`],
+      ['exec', 'changeset', 'status', `--since=${releaseBase}`, `--output=${statusFile}`],
       {
         cwd: repoRoot,
       }
@@ -125,19 +127,58 @@ async function readChangesetStatus(manifestVersion: string): Promise<ChangesetSt
   return await readJson<ChangesetStatus>(statusFile);
 }
 
-function assertReleaseStateForCli(status: ChangesetStatus, manifestVersion: string): void {
-  const cliRelease = status.releases.find((entry) => entry.name === '@actor-web/cli');
+async function changedCliFiles(): Promise<string[]> {
+  const commands = [
+    [
+      'diff',
+      '--merge-base',
+      releaseBase,
+      '--name-only',
+      '--no-renames',
+      '--relative',
+      '-z',
+      '--',
+      '.',
+    ],
+    ['ls-files', '--others', '--exclude-standard', '-z', '--', '.'],
+  ];
+  const results = await Promise.all(
+    commands.map((args) => runCommand('git', ['--no-pager', ...args], { cwd: packageRoot }))
+  );
+  return results.flatMap(({ stdout }) => stdout.split('\0').filter(Boolean));
+}
+
+function assertReleaseStateForCli(
+  status: ChangesetStatus,
+  manifest: CliPackageManifest,
+  changedFiles: readonly string[]
+): void {
+  const cliRelease = status.releases.find((entry) => entry.name === manifest.name);
 
   if (!cliRelease) {
-    expect(manifestVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
     return;
   }
 
   expect(cliRelease).toMatchObject({
-    oldVersion: manifestVersion,
+    oldVersion: manifest.version,
   });
-  expect(cliRelease.newVersion).not.toBe(manifestVersion);
-  expect(cliRelease.changesets.length).toBeGreaterThan(0);
+  expect(cliRelease.newVersion).not.toBe(manifest.version);
+  if (cliRelease.changesets.length > 0) return;
+
+  expect(cliRelease.type, 'Only dependency-driven patches may omit a CLI changeset').toBe('patch');
+  const packageChanges = changedFiles.filter(
+    (path) =>
+      !path.startsWith('tests/') && !/\.test\.tsx?$/.test(path) && path !== 'vitest.config.ts'
+  );
+  expect(packageChanges, 'CLI package changes need a direct CLI changeset').toEqual([]);
+  const dependencyBumped = status.releases.some(
+    (entry) =>
+      manifest.dependencies?.[entry.name]?.startsWith('workspace:') &&
+      entry.type !== 'none' &&
+      entry.oldVersion !== entry.newVersion
+  );
+  expect(dependencyBumped, 'Expected a release of a CLI workspace dependency').toBe(true);
 }
 
 async function packPackage(packageDir: string, packDir: string): Promise<string> {
@@ -223,7 +264,44 @@ describe('@actor-web/cli release contract', () => {
     expect(manifest.scripts?.prepublishOnly).toBe('pnpm build');
 
     expect(changesetConfig.ignore ?? []).not.toContain('@actor-web/cli');
-    assertReleaseStateForCli(changesetStatus, manifest.version);
+    assertReleaseStateForCli(changesetStatus, manifest, await changedCliFiles());
+  });
+
+  it('allows a patch without a CLI changeset only for a bumped workspace dependency', () => {
+    const manifest = {
+      name: '@actor-web/cli',
+      version: '1.0.0',
+      dependencies: { '@actor-web/agent': 'workspace:*' },
+    };
+    const patch = {
+      name: manifest.name,
+      oldVersion: manifest.version,
+      newVersion: '1.0.1',
+      type: 'patch' as const,
+      changesets: [],
+    };
+    const dependency = {
+      name: '@actor-web/agent',
+      oldVersion: '0.2.2',
+      newVersion: '0.3.0',
+      type: 'minor' as const,
+      changesets: ['agent-feature'],
+    };
+    const check = (releases: ChangesetStatus['releases'], files: string[] = []) =>
+      assertReleaseStateForCli({ releases }, manifest, files);
+
+    check([patch, dependency], ['src/release-contract.test.ts']);
+    check([{ ...patch, changesets: ['cli-fix'] }], ['src/cli/index.ts']);
+    expect(() => check([patch, dependency], ['src/cli/index.ts'])).toThrow(/direct CLI changeset/);
+    expect(() => check([{ ...patch, type: 'minor', newVersion: '1.1.0' }, dependency])).toThrow(
+      /patches/
+    );
+    expect(() => check([patch, { ...dependency, name: '@actor-web/unrelated' }])).toThrow(
+      /workspace dependency/
+    );
+    expect(() =>
+      check([patch, { ...dependency, type: 'none', newVersion: dependency.oldVersion }])
+    ).toThrow(/workspace dependency/);
   });
 
   it('rejects forced provenance before the manual release workflow starts', async () => {
@@ -386,7 +464,8 @@ describe('@actor-web/cli release contract', () => {
     }
   });
 
-  it('packs a clean consumer-ready artifact with rewritten workspace dependencies', async () => {
+  // This test builds and packs three real packages before exercising a clean consumer.
+  it('packs a consumer-ready CLI with rewritten workspace dependencies', async () => {
     const packDir = await makeTempDir('actor-web-cli-pack-');
     const cliManifest = await readJson<CliPackageManifest>(resolve(packageRoot, 'package.json'));
     const runtimeManifest = await readJson<CliPackageManifest>(
@@ -482,7 +561,7 @@ describe('@actor-web/cli release contract', () => {
     await writeFile(
       join(consumerDir, 'topology.mjs'),
       [
-        "import { actor, defineActorWebTopology, defineBehavior, node } from '@actor-web/runtime';",
+        "import { actor, defineTopology, defineBehavior, node } from '@actor-web/runtime';",
         '',
         'const counter = defineBehavior()',
         '  .withContext({ count: 0 })',
@@ -496,7 +575,7 @@ describe('@actor-web/cli release contract', () => {
         '    return {};',
         '  });',
         '',
-        'export default defineActorWebTopology({',
+        'export default defineTopology({',
         "  nodes: { local: node('local') },",
         "  actors: { counter: actor({ id: 'counter', node: 'local', behavior: counter }) },",
         '});',
@@ -540,7 +619,7 @@ describe('@actor-web/cli release contract', () => {
     await writeFile(
       apiSmokePath,
       [
-        "import { actor, createInMemoryAgentSessionCheckpointStore, defineActorWebTopology, defineBehavior, node } from '@actor-web/runtime';",
+        "import { actor, createInMemoryAgentSessionCheckpointStore, defineTopology, defineBehavior, node } from '@actor-web/runtime';",
         "import { createRuntimeHost } from '@actor-web/cli';",
         '',
         'const controlPlane = defineBehavior()',
@@ -610,7 +689,7 @@ describe('@actor-web/cli release contract', () => {
         '    return { reply: current };',
         '  });',
         '',
-        'const topology = defineActorWebTopology({',
+        'const topology = defineTopology({',
         "  nodes: { server: node('server') },",
         '  actors: {',
         '    controlPlaneSession: actor({',
@@ -776,5 +855,5 @@ describe('@actor-web/cli release contract', () => {
       expect(exportSmoke.stdout).toContain('"serve"');
       expect(exportSmoke.stdout).toContain('"info"');
     }
-  }, 15_000);
+  }, 120_000);
 });

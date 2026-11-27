@@ -81,7 +81,7 @@ actor-web connect ./topology.mjs ws://127.0.0.1:9000 --token gateway-secret --ex
 
 ```ts
 import { createRuntimeHost } from '@actor-web/cli';
-import { actor, defineActorWebTopology, defineBehavior, node } from '@actor-web/runtime';
+import { actor, defineTopology, defineBehavior, node } from '@actor-web/runtime';
 
 const counter = defineBehavior()
   .withContext({ count: 0 })
@@ -95,7 +95,7 @@ const counter = defineBehavior()
     return {};
   });
 
-const topology = defineActorWebTopology({
+const topology = defineTopology({
   nodes: { local: node('local') },
   actors: { counter: actor({ id: 'counter', node: 'local', behavior: counter }) },
 });

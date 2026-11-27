@@ -1316,7 +1316,8 @@ export function renderTemplate<TContext = unknown>(
 // ActorInstance is imported from actor-instance.js
 
 /**
- * Create actor function - creates an ActorBehavior that can be spawned
+ * @deprecated Pass the behavior object directly, or author one with defineBehavior().
+ * This identity helper does not spawn an actor.
  */
 export function createActor<TMessage extends ActorMessage = ActorMessage>(
   config: ActorBehavior<TMessage>

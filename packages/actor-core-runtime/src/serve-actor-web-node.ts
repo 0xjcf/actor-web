@@ -3,11 +3,11 @@ import type { ActorMessage, ActorSystem, MessageTransport } from './actor-system
 import { createActorSystem } from './actor-system-impl.js';
 import type { ActorToolRegistry } from './actor-tools.js';
 import {
-  type ActorWebNodeActorHandles,
   type ActorWebSubscriptionTeardown,
   createActorWebNodeActorHandles,
   createActorWebNodeToolAccess,
   getActorWebNodeDefinition,
+  type NodeActorHandles,
   resolveOwnedActorWebSupervisorGroups,
   spawnOwnedActorWebActors,
   wireOwnedActorWebSubscriptions,
@@ -40,19 +40,19 @@ import {
 } from './runtime-transport-status.js';
 import type { RuntimeTransportTelemetryObserver } from './runtime-transport-telemetry.js';
 import type {
-  ActorWebActorContext,
-  ActorWebActorDescriptor,
-  ActorWebActorMessage,
-  ActorWebTopology,
-  ActorWebTopologyInput,
+  ActorContextOf,
+  ActorDescriptor,
+  ActorMessageOf,
+  Topology,
+  TopologyInput,
 } from './topology.js';
 
-type ActorWebNodeGatewayAuthVerifyInput = {
+type NodeGatewayAuthVerifyInput = {
   readonly connectionId: string;
   readonly clientVersion?: string;
 };
 
-export interface ActorWebNodeGatewayOptions<
+export interface NodeGatewayOptions<
   TActorKey extends string = string,
   TGatewayAuthContext = Record<string, never>,
 > {
@@ -62,14 +62,11 @@ export interface ActorWebNodeGatewayOptions<
   readonly resolveScope?: RuntimeGatewayScopeResolver<TGatewayAuthContext>;
   readonly inboundQueueLimit?: number;
   readonly observer?: (event: RuntimeGatewayObserverEvent) => void;
-  readonly auth?: RuntimeGatewayAuthProvider<
-    ActorWebNodeGatewayAuthVerifyInput,
-    TGatewayAuthContext
-  >;
+  readonly auth?: RuntimeGatewayAuthProvider<NodeGatewayAuthVerifyInput, TGatewayAuthContext>;
   readonly commandAdmission?: RuntimeGatewayCommandAdmissionOptions<TGatewayAuthContext>;
 }
 
-export interface ActorWebNodeTransportOptions {
+export interface NodeTransportOptions {
   readonly listen?:
     | boolean
     | {
@@ -89,26 +86,26 @@ export interface ActorWebNodeTransportOptions {
   readonly telemetry?: RuntimeTransportTelemetryObserver;
 }
 
-export interface ServeActorWebNodeOptions<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+export interface ServeNodeOptions<
+  TTopology extends Topology<TopologyInput>,
   TGatewayAuthContext = Record<string, never>,
 > {
   readonly node: keyof TTopology['nodes'] & string;
   readonly host?: string;
   readonly gateway?:
     | boolean
-    | ActorWebNodeGatewayOptions<keyof TTopology['actors'] & string, TGatewayAuthContext>;
-  readonly transport?: boolean | ActorWebNodeTransportOptions;
+    | NodeGatewayOptions<keyof TTopology['actors'] & string, TGatewayAuthContext>;
+  readonly transport?: boolean | NodeTransportOptions;
   readonly peers?: Partial<Record<keyof TTopology['nodes'] & string, string>>;
   readonly connect?: readonly (keyof TTopology['nodes'] & string)[];
   readonly discovery?: RuntimePeerDiscoveryProvider;
   readonly tools?: ActorToolRegistry;
 }
 
-export interface ServedActorWebNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>> {
+export interface ServedNode<TTopology extends Topology<TopologyInput>> {
   readonly system: ActorSystem;
   readonly transport: MessageTransport;
-  readonly actors: ActorWebNodeActorHandles<TTopology>;
+  readonly actors: NodeActorHandles<TTopology>;
   start(): Promise<void>;
   stop(): Promise<void>;
   getGatewayUrl(): string | null;
@@ -118,17 +115,11 @@ export interface ServedActorWebNode<TTopology extends ActorWebTopology<ActorWebT
   getActor<TKey extends keyof TTopology['actors'] & string>(
     key: TKey
   ):
-    | ActorRef<
-        ActorWebActorContext<TTopology['actors'][TKey]>,
-        ActorWebActorMessage<TTopology['actors'][TKey]>
-      >
+    | ActorRef<ActorContextOf<TTopology['actors'][TKey]>, ActorMessageOf<TTopology['actors'][TKey]>>
     | undefined;
   requireActor<TKey extends keyof TTopology['actors'] & string>(
     key: TKey
-  ): ActorRef<
-    ActorWebActorContext<TTopology['actors'][TKey]>,
-    ActorWebActorMessage<TTopology['actors'][TKey]>
-  >;
+  ): ActorRef<ActorContextOf<TTopology['actors'][TKey]>, ActorMessageOf<TTopology['actors'][TKey]>>;
 }
 
 interface WebSocketLike {
@@ -249,22 +240,19 @@ async function closeWebSocketServer(server: WebSocketServerLike): Promise<void> 
   });
 }
 
-function normalizeGatewayOptions<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
-  TGatewayAuthContext,
->(
-  gateway: ServeActorWebNodeOptions<TTopology, TGatewayAuthContext>['gateway']
-): ActorWebNodeGatewayOptions<keyof TTopology['actors'] & string, TGatewayAuthContext> | undefined {
+function normalizeGatewayOptions<TTopology extends Topology<TopologyInput>, TGatewayAuthContext>(
+  gateway: ServeNodeOptions<TTopology, TGatewayAuthContext>['gateway']
+): NodeGatewayOptions<keyof TTopology['actors'] & string, TGatewayAuthContext> | undefined {
   return gateway === true ? {} : gateway || undefined;
 }
 
 function normalizeTransportOptions(
-  transport: boolean | ActorWebNodeTransportOptions | undefined
-): ActorWebNodeTransportOptions | undefined {
+  transport: boolean | NodeTransportOptions | undefined
+): NodeTransportOptions | undefined {
   return transport === true ? { listen: true } : transport || undefined;
 }
 
-function resolveTopologyPeerUrls<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+function resolveTopologyPeerUrls<TTopology extends Topology<TopologyInput>>(
   topology: TTopology,
   peers: Partial<Record<keyof TTopology['nodes'] & string, string>> | undefined
 ): Record<string, string> {
@@ -284,7 +272,7 @@ function resolveTopologyPeerUrls<TTopology extends ActorWebTopology<ActorWebTopo
   );
 }
 
-function resolveTopologyNodeAddresses<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+function resolveTopologyNodeAddresses<TTopology extends Topology<TopologyInput>>(
   topology: TTopology,
   nodeKeys: readonly (keyof TTopology['nodes'] & string)[]
 ): string[] {
@@ -305,12 +293,12 @@ function wait(delayMs: number): Promise<void> {
 }
 
 export async function serveNode<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+  TTopology extends Topology<TopologyInput>,
   TGatewayAuthContext = Record<string, never>,
 >(
   topology: TTopology,
-  options: ServeActorWebNodeOptions<TTopology, TGatewayAuthContext>
-): Promise<ServedActorWebNode<TTopology>> {
+  options: ServeNodeOptions<TTopology, TGatewayAuthContext>
+): Promise<ServedNode<TTopology>> {
   const nodeDefinition = getActorWebNodeDefinition(topology, options.node);
 
   const host = options.host ?? '127.0.0.1';
@@ -422,7 +410,7 @@ export async function serveNode<
 
   const resolveActorGatewaySource = async (
     actorKey: string,
-    actorDescriptor: ActorWebActorDescriptor
+    actorDescriptor: ActorDescriptor
   ): Promise<RuntimeGatewaySource | null> => {
     const cachedSource = gatewaySources.get(actorKey);
     if (cachedSource) {
@@ -655,7 +643,7 @@ export async function serveNode<
     }
   };
 
-  const servedNode: ServedActorWebNode<TTopology> = {
+  const servedNode: ServedNode<TTopology> = {
     system,
     transport,
     actors: actorHandles,
@@ -680,8 +668,8 @@ export async function serveNode<
     getActor(key) {
       return actors.get(key) as
         | ActorRef<
-            ActorWebActorContext<TTopology['actors'][typeof key]>,
-            ActorWebActorMessage<TTopology['actors'][typeof key]>
+            ActorContextOf<TTopology['actors'][typeof key]>,
+            ActorMessageOf<TTopology['actors'][typeof key]>
           >
         | undefined;
     },
@@ -698,3 +686,14 @@ export async function serveNode<
   await servedNode.start();
   return servedNode;
 }
+
+export type {
+  /** @deprecated Use NodeGatewayOptions instead. */
+  NodeGatewayOptions as ActorWebNodeGatewayOptions,
+  /** @deprecated Use NodeTransportOptions instead. */
+  NodeTransportOptions as ActorWebNodeTransportOptions,
+  /** @deprecated Use ServeNodeOptions instead. */
+  ServeNodeOptions as ServeActorWebNodeOptions,
+  /** @deprecated Use ServedNode instead. */
+  ServedNode as ServedActorWebNode,
+};

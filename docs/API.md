@@ -7,12 +7,12 @@ typed messages, topology-owned actors, and hexagonal boundaries.
 Read this guide in layers:
 
 1. Define actor behavior with `defineBehavior(...)`.
-2. Declare runtime ownership with `defineActorWebTopology(...)`.
+2. Declare runtime ownership with `defineTopology(...)`.
 3. Start actor-owning locations with `serveNode(...)` or
-   `startActorWebNode(...)`.
-4. Connect thin UIs and dashboards with `createActorWebReadModelClient(...)` or
-   `createActorWebReadModelSource(...)`.
-5. Add application ingress with `serveActorWebHttp(...)`.
+   `startNode(...)`.
+4. Connect thin UIs and dashboards with `createReadModelClient(...)` or
+   `createGatewayReadModelSource(...)`.
+5. Add application ingress with `serveHttp(...)`.
 
 Current guarantees:
 
@@ -43,13 +43,13 @@ Use these APIs by location:
 
 | Location | Owns actors? | API |
 | --- | --- | --- |
-| Shared contract package | No runtime | `defineActorWebTopology(...)` |
+| Shared contract package | No runtime | `defineTopology(...)` |
 | Backend/server process | Yes | `serveNode(...)` |
-| Backend REST/application ingress | Uses served actors | `serveActorWebHttp(runtime)` |
-| Browser UI / Ignite host | No ActorSystem by default | `createActorWebReadModelClient(...)` |
-| Browser/WebWorker runtime location | Yes | `startActorWebNode(...)` |
-| Browser-local worker or service-worker edge | Optional | `createMessagePortTransport(...)` passed to `startActorWebNode(...)` |
-| Separate frontend/backend repos | Usually client-only | `createActorWebReadModelSource({ address, contractVersion, gateway })` |
+| Backend REST/application ingress | Uses served actors | `serveHttp(runtime)` |
+| Browser UI / Ignite host | No ActorSystem by default | `createReadModelClient(...)` |
+| Browser/WebWorker runtime location | Yes | `startNode(...)` |
+| Browser-local worker or service-worker edge | Optional | `createMessagePortTransport(...)` passed to `startNode(...)` |
+| Separate frontend/backend repos | Usually client-only | `createGatewayReadModelSource({ address, contractVersion, gateway })` |
 
 There are two different network channels:
 
@@ -59,7 +59,7 @@ There are two different network channels:
   actors and exchange actor messages.
 
 Use a gateway source when a page or client wants to observe/control an actor. Use
-`startActorWebNode(...)` or `serveNode(...)` when that process is an
+`startNode(...)` or `serveNode(...)` when that process is an
 Actor-Web runtime location that owns actors.
 
 Recommended imports:
@@ -67,19 +67,19 @@ Recommended imports:
 ```ts
 // Shared topology and actor behavior.
 import { defineBehavior, defineFSM } from '@actor-web/runtime';
-import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 
 // Browser/client projection and browser worker runtime hosting.
 import {
-  createActorWebCommandSource,
-  createActorWebReadModelClient,
-  createActorWebReadModelSource,
+  createGatewayCommandSource,
+  createReadModelClient,
+  createGatewayReadModelSource,
   startRuntime,
-  startActorWebNode,
+  startNode,
 } from '@actor-web/runtime/browser';
 
 // Node/server runtime hosting and HTTP ingress.
-import { serveActorWebHttp, serveNode } from '@actor-web/runtime/node';
+import { serveHttp, serveNode } from '@actor-web/runtime/node';
 ```
 
 ## Actor Behavior
@@ -240,13 +240,13 @@ const behavior = defineBehavior()
 
 ## Topology
 
-### `defineActorWebTopology(...)`
+### `defineTopology(...)`
 
 Topology is the shared source of truth for nodes, actors, supervision metadata,
 gateway exposure, and tool requirements.
 
 ```ts
-import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 
 const shipmentBehavior = defineBehavior()
   .withContext({
@@ -295,7 +295,7 @@ const routingBehavior = defineBehavior()
   })
   .build();
 
-export const logistics = defineActorWebTopology({
+export const logistics = defineTopology({
   contractVersion: '1.0.0',
 
   nodes: {
@@ -417,7 +417,7 @@ const scanShipmentBehavior = defineBehavior()
   })
   .build();
 
-const logistics = defineActorWebTopology({
+const logistics = defineTopology({
   tools: [tool('provider.scan.verify'), tool('route.plan')],
   nodes: {
     server: node('logistics-server-runtime'),
@@ -479,7 +479,7 @@ const server = await serveNode(logistics, {
 });
 
 // browser.ts
-const client = createActorWebReadModelClient(logistics, {
+const client = createReadModelClient(logistics, {
   gateway: {
     url: 'ws://logistics.example.com/gateway',
     auth: {
@@ -511,7 +511,7 @@ const server = await serveNode(logistics, {
 });
 
 // worker.ts
-const worker = await startActorWebNode(logistics, {
+const worker = await startNode(logistics, {
   node: 'worker',
   peers: {
     server: 'ws://logistics.example.com/runtime-transport',
@@ -538,7 +538,7 @@ const discovery = createStaticRuntimePeerDiscoveryProvider([
   },
 ]);
 
-await startActorWebNode(logistics, {
+await startNode(logistics, {
   node: 'worker',
   discovery,
 });
@@ -559,7 +559,7 @@ const transport = createMessagePortTransport({
   port: channel.port1,
 });
 
-await startActorWebNode(logistics, {
+await startNode(logistics, {
   node: 'serviceWorker',
   transport,
 });
@@ -567,12 +567,12 @@ await startActorWebNode(logistics, {
 
 ## Client Sources
 
-Use `createActorWebReadModelClient(...)` as the default UI/client entrypoint
+Use `createReadModelClient(...)` as the default UI/client entrypoint
 when a shared topology is available. It binds gateway configuration once and
 exposes each actor as a projection-only source.
 
 ```ts
-const client = createActorWebReadModelClient(logistics, {
+const client = createReadModelClient(logistics, {
   gateway: { url: 'ws://127.0.0.1:4100' },
   clientVersion: 'logistics-ui',
 });
@@ -598,7 +598,7 @@ Topology actors expose the same source factory names everywhere:
 | `commands(opts)` | the host owns command/control without projection replay | pass as `igniteCore({ source })` |
 | `session(opts)` | the host intentionally separates read and command handles with one lifecycle hook | pass `session.commands` when Ignite commands; pass `session.readModel` for read-only projection |
 
-`opts` is `ActorWebSourceOptions`: `{ gateway: { url, scope?, auth? },
+`opts` is `GatewaySourceOptions`: `{ gateway: { url, scope?, auth? },
 streamId?, createSocket?, clientVersion? }`. It is gateway/transport
 configuration, not actor identity. The actor is selected by the topology path
 (`logistics.actors.shipment`); `gateway.scope.params` carries product filters
@@ -697,10 +697,10 @@ await shipmentCommands.send({
 });
 ```
 
-Generic command-capable clients can still use `createActorWebClient(...)`:
+Generic command-capable clients can still use `createClient(...)`:
 
 ```ts
-const legacyClient = createActorWebClient(logistics, {
+const legacyClient = createClient(logistics, {
   gateway: { url: 'ws://127.0.0.1:4100' },
 });
 
@@ -711,16 +711,16 @@ await legacyClient.actors.shipment.send({
 });
 ```
 
-### `createActorWebReadModelSource(...)`
+### `createGatewayReadModelSource(...)`
 
-Use `createActorWebReadModelSource` for explicit or generated-client paths.
+Use `createGatewayReadModelSource` for explicit or generated-client paths.
 Prefer the single-object shape. This creates a gateway-backed read-model source
 for a client; it does not start an Actor-Web runtime node. Read-model sources
 always keep the full projection subscription so `snapshot()`,
 `subscribe(listener)`, and `subscribeEvent(...)` remain available.
 
 ```ts
-const shipmentSource = createActorWebReadModelSource({
+const shipmentSource = createGatewayReadModelSource({
   actor: logistics.actors.shipment,
   gateway: { url: 'ws://127.0.0.1:4100' },
 });
@@ -739,7 +739,7 @@ Separate repos can use address metadata instead of the shared TypeScript
 topology:
 
 ```ts
-const shipmentSource = createActorWebReadModelSource({
+const shipmentSource = createGatewayReadModelSource({
   address: 'actor://logistics-server-runtime/logistics-shipment',
   contractVersion: '1.0.0',
   gateway: {
@@ -751,7 +751,7 @@ const shipmentSource = createActorWebReadModelSource({
 });
 ```
 
-Use `createActorWebCommandSource(...)` or `topology.actors.name.commands(...)`
+Use `createGatewayCommandSource(...)` or `topology.actors.name.commands(...)`
 only when the host intentionally owns command/control for that actor without a
 projection stream. These helpers opt into the gateway's command-only subscribe
 mode: they still go through gateway auth and scope resolution, but they wait for
@@ -759,7 +759,7 @@ the first post-subscribe status instead of an initial snapshot and they do not
 request snapshot/event/transition replay.
 
 ```ts
-const shipmentCommands = createActorWebCommandSource({
+const shipmentCommands = createGatewayCommandSource({
   address: 'actor://logistics-server-runtime/logistics-shipment',
   contractVersion: '1.0.0',
   gateway: { url: 'ws://127.0.0.1:4100' },
@@ -772,10 +772,10 @@ await shipmentCommands.send({
 });
 ```
 
-### `createActorWebReadModelClient(topology, options)`
+### `createReadModelClient(topology, options)`
 
 This is the normal browser/UI entrypoint when the UI does not own an
-ActorSystem. Use direct `createActorWebReadModelSource(...)` only when you need
+ActorSystem. Use direct `createGatewayReadModelSource(...)` only when you need
 one source without constructing a full topology client, or when a generated
 client only has address metadata.
 
@@ -828,7 +828,7 @@ if (!worker.connected || !worker.fresh) {
 all known `peers`, and optional `startedAt` / `stoppedAt` timestamps.
 
 When `transport: true` or `transport: { listen: true }` is used,
-`serveNode(...)` and `startActorWebNode(...)` let the WebSocket
+`serveNode(...)` and `startNode(...)` let the WebSocket
 transport heartbeat defaults apply: 15 seconds interval and 30 seconds timeout.
 Set `heartbeatIntervalMs: 0` explicitly to opt out for tests or custom
 deployment constraints.
@@ -862,7 +862,7 @@ const server = await serveNode(logistics, {
   },
 });
 
-const client = createActorWebReadModelClient(logistics, {
+const client = createReadModelClient(logistics, {
   gateway: {
     url: server.getGatewayUrl() ?? '',
     auth: {
@@ -892,7 +892,7 @@ const server = await serveNode(logistics, {
   discovery,
 });
 
-await startActorWebNode(logistics, {
+await startNode(logistics, {
   node: 'worker',
   discovery,
 });
@@ -900,7 +900,7 @@ await startActorWebNode(logistics, {
 
 `serveNode(...)` registers its listening transport URL when one exists
 and unregisters on stop. Both `serveNode(...)` and
-`startActorWebNode(...)` read discovery snapshots at startup and subscribe to
+`startNode(...)` read discovery snapshots at startup and subscribe to
 peer availability changes.
 
 The public provider shape is intentionally small:
@@ -950,19 +950,19 @@ for tests, examples, and local multi-process demos. Production adapters can map
 the same port to Kubernetes, service discovery, a config service, or a broker
 later without changing actor behavior.
 
-### `serveActorWebHttp(runtime)`
+### `serveHttp(runtime)`
 
 Use the HTTP builder for explicit REST/application ports. HTTP routes are
 application adapters around a served node; they are not actor transport and they
 do not replace actor messages inside the runtime.
 
 ```ts
-const http = await serveActorWebHttp(server)
+const http = await serveHttp(server)
   .for(logistics.actors.shipment)
-  .post('/shipments', async (request, response, actorWeb) => {
+  .post('/shipments', async (request, response, context) => {
     const shipmentId = `shipment-${Date.now()}`;
 
-    await actorWeb.actor.send({
+    await context.actor.send({
       type: 'CREATE_SHIPMENT',
       shipmentId,
       destination: String(request.body.destination),
@@ -973,13 +973,13 @@ const http = await serveActorWebHttp(server)
   .listen({ host: '127.0.0.1', port: 4100 });
 ```
 
-### `startActorWebNode(topology, options)`
+### `startNode(topology, options)`
 
 Starts one topology node in a browser/WebWorker-compatible environment. Use this
 only when that worker/process owns actors from the topology.
 
 ```ts
-const worker = await startActorWebNode(logistics, {
+const worker = await startNode(logistics, {
   node: 'worker',
   peers: {
     server: 'ws://127.0.0.1:4102',
@@ -1038,7 +1038,7 @@ The returned runtime exposes:
 Gateway is the thin-host projection/control channel. It is used by browser UIs,
 Ignite Element sources, dashboards, and other clients that need live actor
 snapshots or command routing without becoming runtime peers. HTTP/REST ingress
-is a separate application adapter built with `serveActorWebHttp(...)`.
+is a separate application adapter built with `serveHttp(...)`.
 
 Gateway is not runtime transport. Runtime-to-runtime ownership still flows
 through `MessageTransport`.
@@ -1046,8 +1046,8 @@ through `MessageTransport`.
 Normal applications do not construct gateway hubs directly. Use:
 
 - `serveNode(logistics, { gateway: true })` on the runtime owner.
-- `createActorWebReadModelClient(logistics, { gateway: { url } })` in the UI/client.
-- `createActorWebReadModelSource({ address, contractVersion, gateway })` for generated
+- `createReadModelClient(logistics, { gateway: { url } })` in the UI/client.
+- `createGatewayReadModelSource({ address, contractVersion, gateway })` for generated
   or separate-repo clients.
 
 Scope descriptors:
@@ -1202,7 +1202,7 @@ const server = await serveNode(logistics, {
   transport: true,
 });
 
-const worker = await startActorWebNode(logistics, {
+const worker = await startNode(logistics, {
   node: 'worker',
   peers: {
     server: server.getTransportUrl() ?? '',
@@ -1215,10 +1215,10 @@ runners. Public app code should treat `MessageTransport` as the seam and use
 runner options for host, port, peers, heartbeat settings, telemetry, and
 explicit custom transport injection when needed.
 
-Do not use a runtime transport URL for `createActorWebReadModelClient(...)`,
-`createActorWebReadModelSource(...)`, or `createActorWebCommandSource(...)`;
+Do not use a runtime transport URL for `createReadModelClient(...)`,
+`createGatewayReadModelSource(...)`, or `createGatewayCommandSource(...)`;
 sources connect to the gateway URL. Do not use a
-gateway URL for `startActorWebNode(...)` peers; runtime peers connect to
+gateway URL for `startNode(...)` peers; runtime peers connect to
 transport URLs.
 
 ## MessagePort Transport

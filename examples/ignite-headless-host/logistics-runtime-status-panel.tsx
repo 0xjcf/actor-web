@@ -1,7 +1,11 @@
 /** @jsxImportSource ignite-element/jsx */
 
-import { Address } from '@actor-web/runtime';
-import { type ActorSource, createProjectionTransportStatus } from '@actor-web/runtime/browser';
+import '@ignite-element/renderer/jsx';
+import {
+  type ActorSource,
+  Address,
+  createProjectionTransportStatus,
+} from '@actor-web/runtime/browser';
 import { igniteCore } from 'ignite-element/actor-web';
 import styles from './ignite-headless-host-element.css?raw';
 import {

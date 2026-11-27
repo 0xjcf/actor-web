@@ -1,6 +1,7 @@
 /** @jsxImportSource ignite-element/jsx */
 
-import { type ActorAddress, parse } from '@actor-web/runtime';
+import '@ignite-element/renderer/jsx';
+import { type ActorAddress, parse } from '@actor-web/runtime/browser';
 import { type ActorWebAddress, igniteCore } from 'ignite-element/actor-web';
 import styles from './ignite-headless-host-element.css?raw';
 import { logisticsClient } from './logistics-browser-client';

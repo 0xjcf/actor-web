@@ -41,18 +41,18 @@ Each topology actor selects the Actor-Web actor identity first:
 topology.actors.compare.readModel({ gateway: { url } });
 ```
 
-The argument is `ActorWebSourceOptions`: gateway and client transport config,
+The argument is `GatewaySourceOptions`: gateway and client transport config,
 not actor identity.
 
 ```ts
-type ActorWebSourceOptions = {
+type GatewaySourceOptions = {
   gateway: {
     url: string;
     scope?: { kind?: string; params?: Record<string, string> };
     auth?: RuntimeGatewayAuthProvider;
   };
   streamId?: string;
-  createSocket?: (url: string) => ActorWebGatewaySocket;
+  createSocket?: (url: string) => GatewaySocket;
   clientVersion?: string;
 };
 ```

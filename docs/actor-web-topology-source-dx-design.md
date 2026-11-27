@@ -10,7 +10,7 @@ Actor-Web should support three source-authoring paths for Ignite Element:
   `source: logistics.actors.shipment.readModel({ gateway })`.
 - Address-based source creation for separate repositories or non-TypeScript
   consumers:
-  `createActorWebReadModelSource({ address, contractVersion, gateway })`.
+  `createGatewayReadModelSource({ address, contractVersion, gateway })`.
 
 All paths should preserve hexagonal architecture and actor model topology. The
 topology stays explicit, actors own behavior, adapters own boundaries, and
@@ -21,7 +21,7 @@ Ignite Element owns projection/rendering.
 - Make Actor-Web sources plug-and-play with `igniteCore`, similar to XState,
   Redux, and MobX sources.
 - Avoid explicit user-facing generics such as
-  `createActorWebReadModelSource<Context, Event>(...)`.
+  `createGatewayReadModelSource<Context, Event>(...)`.
 - Keep runtime ownership visible instead of hiding distributed topology behind
   stringly typed UI code.
 - Support monorepos, published shared contract packages, and separate repos that
@@ -84,17 +84,17 @@ Recommended public API boundaries:
 
 ```ts
 // Shared, browser-safe topology declarations.
-import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 
 // Browser/presentation source creation and browser worker runtime hosting.
 import {
-  createActorWebCommandSource,
-  createActorWebReadModelSource,
-  startActorWebNode,
+  createGatewayCommandSource,
+  createGatewayReadModelSource,
+  startNode,
 } from '@actor-web/runtime/browser';
 
 // Node/server runtime hosting and HTTP ingress adapters.
-import { serveActorWebHttp, serveNode } from '@actor-web/runtime/node';
+import { serveHttp, serveNode } from '@actor-web/runtime/node';
 
 // Ignite Element authoring over Actor-Web sources.
 import { igniteCore } from 'ignite-element/actor-web';
@@ -108,15 +108,15 @@ Current implementation status:
 - `@actor-web/runtime/topology` exports the browser-safe topology declaration
   helpers, descriptor types, and actor descriptor `.readModel(...)`,
   `.source(...)`, `.commands(...)`, and `.session(...)` conveniences.
-- `@actor-web/runtime/browser` exports `createActorWebReadModelSource` for
-  gateway-backed Ignite-compatible read-model sources, `createActorWebSource`
-  for read/write sources, and `createActorWebCommandSource` for explicit
+- `@actor-web/runtime/browser` exports `createGatewayReadModelSource` for
+  gateway-backed Ignite-compatible read-model sources, `createGatewaySource`
+  for read/write sources, and `createGatewayCommandSource` for explicit
   host-owned command-only control.
 - `@actor-web/runtime/node` exports `serveNode` for topology-owned
   Node/server runtime hosting.
-- `@actor-web/runtime/node` exports `serveActorWebHttp` for route-first HTTP
+- `@actor-web/runtime/node` exports `serveHttp` for route-first HTTP
   adapters around a served node.
-- `@actor-web/runtime/browser` exports `startActorWebNode` for topology-owned
+- `@actor-web/runtime/browser` exports `startNode` for topology-owned
   browser worker runtime hosting.
 - `ignite-element/actor-web` is the first-class Ignite Element adapter entrypoint
   for Actor-Web sources.
@@ -130,11 +130,11 @@ TypeScript contract. This is the recommended monorepo and shared package DX.
 
 ```ts
 // logistics.topology.ts
-import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 import { createRoutingBehavior } from './actors/routing.actor';
 import { createShipmentBehavior } from './actors/shipment.actor';
 
-export const logistics = defineActorWebTopology({
+export const logistics = defineTopology({
   contractVersion: '1.4.0',
 
   tools: [tool('route.plan')],
@@ -252,7 +252,7 @@ const server = await serveNode(logistics, {
   transport: true,
 });
 
-const http = await serveActorWebHttp(server)
+const http = await serveHttp(server)
   .for(logistics.actors.shipment)
   .post('/shipments', async (request, response, { actor }) => {
     const body = request.body as { shipmentId?: string; destination?: string };
@@ -279,9 +279,9 @@ console.log(http.url);
 ```
 
 REST, provider callbacks, and other ingress ports remain app-owned adapters,
-but `serveActorWebHttp(server)` removes the repeated Node HTTP boilerplate. The
-handler shape is `(request, response, actorWeb)`: `request` is HTTP data,
-`response` owns JSON/status helpers, and `actorWeb` exposes `runtime`,
+but `serveHttp(server)` removes the repeated Node HTTP boilerplate. The
+handler shape is `(request, response, context)`: `request` is HTTP data,
+`response` owns JSON/status helpers, and `context` exposes `runtime`,
 `actors`, plus inferred `actor` inside `.for(actorDescriptor)` routes.
 
 The gateway exposed by `serveNode` is the client projection/control
@@ -292,12 +292,12 @@ The browser worker runs another node:
 
 ```ts
 // worker-runtime.ts
-import { startActorWebNode } from '@actor-web/runtime/browser';
+import { startNode } from '@actor-web/runtime/browser';
 import { logistics } from './logistics.topology';
 
 const transportUrl = new URL(self.location.href).searchParams.get('transportUrl') ?? '';
 
-startActorWebNode(logistics, {
+startNode(logistics, {
   node: 'worker',
   peers: {
     server: transportUrl,
@@ -318,9 +318,9 @@ Use this path when the UI cannot import the shared TypeScript topology:
 - the UI only knows a deployed actor address and gateway URL.
 
 ```ts
-import { createActorWebReadModelSource } from '@actor-web/runtime/browser';
+import { createGatewayReadModelSource } from '@actor-web/runtime/browser';
 
-const shipmentSource = createActorWebReadModelSource({
+const shipmentSource = createGatewayReadModelSource({
   address: 'actor://logistics-server-runtime/actor/logistics-shipment',
   contractVersion: '1.4.0',
   gateway: {
@@ -384,7 +384,7 @@ The user-facing API should infer `Context`, `Command`, and `Event` from the
 actor source. Developers should not need to write:
 
 ```ts
-createActorWebReadModelSource<ShipmentContext, ShipmentEvent>(/* ... */);
+createGatewayReadModelSource<ShipmentContext, ShipmentEvent>(/* ... */);
 ```
 
 Inference should flow from:
@@ -423,17 +423,17 @@ boundary; the distinction is in how the source is declared and connected.
 
 Recommended API names:
 
-- `defineActorWebTopology`: declares shared runtime topology.
+- `defineTopology`: declares shared runtime topology.
 - `supervisor`: declares a supervised actor group.
 - `serveNode`: starts a Node/server runtime node.
-- `serveActorWebHttp`: starts a Node HTTP adapter around a served runtime node.
-- `startActorWebNode`: starts a browser-safe runtime node, including
+- `serveHttp`: starts a Node HTTP adapter around a served runtime node.
+- `startNode`: starts a browser-safe runtime node, including
   WebWorker nodes with browser WebSocket transport and Service Worker nodes with
   an explicit browser-safe `MessageTransport`.
-- `createActorWebClient`: binds a topology to deployed client gateway options
+- `createClient`: binds a topology to deployed client gateway options
   and exposes actor sources as `client.actors.name`.
-- `createActorWebReadModelSource`: creates a browser-safe projection source.
-- `createActorWebCommandSource`: creates an explicit browser-safe command surface.
+- `createGatewayReadModelSource`: creates a browser-safe projection source.
+- `createGatewayCommandSource`: creates an explicit browser-safe command surface.
 - `igniteCore` from `ignite-element/actor-web`: authoring surface for Actor-Web
   components.
 
@@ -456,9 +456,9 @@ Use address-based source creation when:
 
 Use `serveNode` only in Node/server entrypoints.
 
-Use `serveActorWebHttp` only in Node/server entrypoints that need HTTP ingress.
+Use `serveHttp` only in Node/server entrypoints that need HTTP ingress.
 
-Use `startActorWebNode` only in browser runtime entrypoints. A WebWorker
+Use `startNode` only in browser runtime entrypoints. A WebWorker
 normally uses the built-in browser WebSocket transport options. A Service Worker
 or browser-local topology proof can pass a `MessageTransport` implementation so
 the topology node still starts through the same public runner instead of a
@@ -485,12 +485,12 @@ const inspections = fleet.actors.vehicleInspections.readModel({
 });
 ```
 
-Use `createActorWebReadModelClient(topology, { gateway })` when one browser
+Use `createReadModelClient(topology, { gateway })` when one browser
 shell needs multiple actor sources from the same deployed gateway. Components
 can then pass `client.actors.shipment` or `client.actors.routing` directly to
 `igniteCore`.
 
-Use `createActorWebReadModelSource({ address, contractVersion, gateway })` when
+Use `createGatewayReadModelSource({ address, contractVersion, gateway })` when
 the UI cannot import shared topology metadata. Address-based sources infer
 `scope.kind` from the actor id unless `gateway.scope.kind` is explicitly
 supplied.
@@ -498,8 +498,8 @@ supplied.
 Command/read split is modeled at the topology boundary, not by requiring a
 custom gateway scope for every source. Default browser/topology sources stay
 projection-only. Hosts that need one Ignite-compatible read/write source use
-`source(...)` or `createActorWebSource(...)`; hosts that only need command
-delivery use `commands(...)` or `createActorWebCommandSource(...)` and get
+`source(...)` or `createGatewaySource(...)`; hosts that only need command
+delivery use `commands(...)` or `createGatewayCommandSource(...)` and get
 the gateway's command-only subscription mode. When an agentic workflow needs
 stricter CQRS boundaries, declare separate topology actors or generated-client
 descriptors for the command actor and the read projection actor. This keeps the
@@ -531,9 +531,9 @@ agent should not require a separate runtime model; it should be an actor with
 isolated state, explicit messages, emitted events, supervision, and topology.
 
 ```ts
-import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 
-export const fas = defineActorWebTopology({
+export const fas = defineTopology({
   contractVersion: '1.0.0',
 
   nodes: {
@@ -604,7 +604,7 @@ Tool declarations are required ports, not implementations. A runtime entrypoint
 provides the concrete adapters when it starts a node:
 
 ```ts
-await startActorWebNode(fas, {
+await startNode(fas, {
   node: 'worker',
   tools: {
     'repo.search': repoSearchAdapter,
@@ -673,7 +673,7 @@ real-time operational dashboards.
 
 - Should generated/source-enabled topology clients expose
   `topology.actors.shipment.readModel()`, or should all runtime configuration stay
-  explicit through `createActorWebReadModelSource(actor, options)`?
+  explicit through `createGatewayReadModelSource(actor, options)`?
 - Should actor supervision start as metadata only, or should the first topology
   implementation enforce restart strategy immediately?
 - Should supervisor groups map directly to runtime supervisor actors, or remain

@@ -1,5 +1,5 @@
 import { defineBehavior } from '@actor-web/runtime';
-import { defineActorWebTopology, node } from '@actor-web/runtime/topology';
+import { defineTopology, node } from '@actor-web/runtime/topology';
 import { describe, expect, it, vi } from 'vitest';
 import { deriveDependencyId } from '../dependency.js';
 import type { DependencyDefinition, LatticeMessage } from '../protocol.js';
@@ -16,7 +16,7 @@ describe('lattice topology helpers', () => {
       .withContext({ planned: false })
       .onMessage(() => ({ context: { planned: true } }))
       .build();
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: { local: node('local') },
       actors: {
         workspace: lattice({ id: 'workflow-lattice', node: 'local' }),
@@ -72,7 +72,7 @@ describe('lattice topology helpers', () => {
       mode: 'everyVersion' as const,
     };
     const buildTopology = (dependencies: readonly DependencyDefinition[]) =>
-      defineActorWebTopology({
+      defineTopology({
         nodes: { local: node('local') },
         actors: {
           workspace: lattice({ id: 'workflow-lattice', node: 'local' }),
@@ -105,7 +105,7 @@ describe('lattice topology helpers', () => {
       .withContext({})
       .onMessage(() => ({ context: {} }))
       .build();
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: { local: node('local') },
       actors: {
         workspace: lattice({ id: 'workflow-lattice', node: 'local' }),

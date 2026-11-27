@@ -3,6 +3,7 @@ export type {
   ActorRef,
 } from './actor-ref.js';
 export type {
+  ActorAddress,
   ActorMessage,
   ActorSystem,
   ClusterState,
@@ -60,12 +61,22 @@ export type {
   ActorWebLocalRuntimeSourceOptions,
   ActorWebLocalRuntimeSources,
   ActorWebReadModelClient,
+  Client,
+  ClientOptions,
+  LocalRuntimeActorSource,
+  LocalRuntimeSourceOptions,
+  LocalRuntimeSources,
+  ReadModelClient,
   StartActorWebLocalRuntimeOptions,
   StartedActorWebLocalRuntime,
+  StartedLocalRuntime,
+  StartLocalRuntimeOptions,
 } from './actor-web-client.js';
 export {
   createActorWebClient,
   createActorWebReadModelClient,
+  createClient,
+  createReadModelClient,
   startRuntime,
 } from './actor-web-client.js';
 export type {
@@ -73,11 +84,20 @@ export type {
   ActorWebGatewaySocket,
   ActorWebSourceGatewayOptions,
   ActorWebSourceOptions,
+  AddressSourceInput,
   ClosableActorWebCommandSource,
   ClosableActorWebReadModelSource,
   ClosableActorWebSource,
   ClosableActorWebSourceHandle,
   ClosableActorWebTraceSource,
+  ClosableCommandSource,
+  ClosableReadModelSource,
+  ClosableSource,
+  ClosableSourceHandle,
+  ClosableTraceSource,
+  GatewaySocket,
+  GatewaySourceOptions,
+  SourceGatewayOptions,
 } from './actor-web-source.js';
 export {
   createActorWebCommandSource,
@@ -85,6 +105,11 @@ export {
   createActorWebSource,
   createActorWebSourceHandle,
   createActorWebTraceSource,
+  createGatewayCommandSource,
+  createGatewayReadModelSource,
+  createGatewaySource,
+  createGatewayTraceSource,
+  createSourceHandle,
 } from './actor-web-source.js';
 export type {
   AgentExecutionAdmissionDecision,
@@ -159,6 +184,10 @@ export {
   toAgentExecutionReceiptFromEventEnvelope,
   validateAgentExecutionTrace,
 } from './agent-execution-contract.js';
+export {
+  createAgentSessionCheckpointEnvelope,
+  deriveAgentSessionCheckpointRehydration,
+} from './agent-session-checkpoint-store.js';
 export type {
   BroadcastChannelLike,
   BroadcastChannelMessageTransportOptions,
@@ -206,6 +235,7 @@ export type {
   ProjectionTransportStatus,
 } from './projection-transport.js';
 export { createProjectionTransportStatus } from './projection-transport.js';
+export { type ActorRequest, ask, type ReplyOf } from './request-reply.js';
 export type {
   RuntimeGatewayAuthProvider,
   RuntimeGatewayAuthResult,
@@ -375,10 +405,13 @@ export {
 } from './runtime-transport-telemetry.js';
 export type {
   ActorWebBrowserNodeTransportOptions,
+  BrowserNodeTransportOptions,
   StartActorWebNodeOptions,
   StartedActorWebNode,
+  StartedNode,
+  StartNodeOptions,
 } from './start-actor-web-node.js';
-export { startActorWebNode } from './start-actor-web-node.js';
+export { startActorWebNode, startNode } from './start-actor-web-node.js';
 export type { InMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 export { createInMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 export type {
@@ -399,6 +432,7 @@ export {
   type UnifiedTransitionHandler,
   type UnifiedTransitionHandlers,
 } from './unified-actor-builder.js';
+export { Address, parse } from './utils/factories.js';
 export type {
   WebRtcDataChannelBootstrap,
   WebRtcDataChannelLike,

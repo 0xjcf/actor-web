@@ -1,8 +1,8 @@
 import {
   actor,
   createInMemoryAgentSessionCheckpointStore,
-  defineActorWebTopology,
   defineBehavior,
+  defineTopology,
   node,
 } from '@actor-web/runtime';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -274,7 +274,7 @@ function buildControlPlaneTopology() {
     })
     .build();
 
-  return defineActorWebTopology({
+  return defineTopology({
     nodes: {
       local: node('local'),
     },

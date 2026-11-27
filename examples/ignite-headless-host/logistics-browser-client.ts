@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { createActorWebClient } from '@actor-web/runtime/browser';
+import { createClient } from '@actor-web/runtime/browser';
 import {
   createBrowserServiceWorkerTransport,
   serviceWorkerRemoteNode,
@@ -23,7 +23,7 @@ function requiredGatewayUrl(): string {
 
 const gateway = { url: requiredGatewayUrl() };
 
-export const logisticsClient = createActorWebClient(logistics, {
+export const logisticsClient = createClient(logistics, {
   gateway,
   clientVersion: 'ignite-headless-host',
 });

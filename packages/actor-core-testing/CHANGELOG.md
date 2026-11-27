@@ -1,5 +1,11 @@
 # @actor-web/testing
 
+## 0.4.0
+
+### Patch Changes
+
+- Release in lockstep with `@actor-web/runtime@0.4.0`. No testing API changes.
+
 ## 0.3.0
 
 ### Patch Changes

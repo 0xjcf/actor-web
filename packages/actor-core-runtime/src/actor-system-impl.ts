@@ -67,6 +67,7 @@ import { isLocalAddress, parseActorPath } from './actor-system.js';
 import { createGuardianActor, GUARDIAN_ADDRESS } from './actor-system-guardian.js';
 import { type ActorToolRegistry, createActorToolbox } from './actor-tools.js';
 import { createSystemEventActor, type SystemEventPayload } from './actors/system-event-actor.js';
+import { createAskTimeout } from './ask-pattern-safeguards.js';
 // ✅ UNIFIED API DESIGN Phase 2.1: Auto-publishing system for event subscriptions
 import { AutoPublishingRegistry } from './auto-publishing.js';
 import { ContextActor } from './context-actor.js';
@@ -325,7 +326,7 @@ export function resolveSupervisionDecision(input: SupervisionDecisionInput): Sup
 /**
  * One topology supervisor() group as registered with the actor system.
  * `children` are actor PATHS in declaration order (declaration order is the
- * topology `children` array order, preserved by defineActorWebTopology).
+ * topology `children` array order, preserved by defineTopology).
  */
 export interface SupervisorGroupConfig {
   readonly key: string;
@@ -629,6 +630,8 @@ export class ActorSystemImpl implements ActorSystem {
   private globalInterceptors = new InterceptorChain();
   private actorInterceptors = new WeakMap<ActorPID, InterceptorChain>();
   private messageContexts = new WeakMap<ActorMessage, MessageContext>();
+  // Process-local provenance, never inferred from message fields or an open browser frame.
+  private readonly nestedDeliveries = new WeakMap<ActorMessage, NestedDelivery>();
 
   // Removed callback maps - using pure actor model message passing instead
   private clusterEventCallbacks = new Map<
@@ -1697,16 +1700,16 @@ export class ActorSystemImpl implements ActorSystem {
   async enqueueMessage(
     address: ActorAddress,
     message: ActorMessage,
-    options?: { reentrantTestDelivery?: boolean }
+    nested?: NestedDelivery
   ): Promise<void> {
-    await this.enqueueMessageInternal(address, message, undefined, options);
+    await this.enqueueMessageInternal(address, message, undefined, nested);
   }
 
   private async enqueueMessageInternal(
     address: ActorAddress,
     message: ActorMessage,
     routeToken?: unknown,
-    options?: { reentrantTestDelivery?: boolean }
+    nested?: NestedDelivery
   ): Promise<void> {
     log.debug('enqueueMessage called', {
       actorPath: address,
@@ -1897,6 +1900,12 @@ export class ActorSystemImpl implements ActorSystem {
     }
 
     try {
+      if (nested) {
+        // An interceptor or a sender may reuse the same object for another delivery.
+        processedMessage = { ...processedMessage };
+        this.messageContexts.set(processedMessage, context);
+        this.nestedDeliveries.set(processedMessage, nested);
+      }
       const enqueued = mailbox.enqueue(processedMessage);
       if (!enqueued && typeof enqueued === 'boolean') {
         log.warn('Message dropped due to full mailbox', {
@@ -1957,9 +1966,7 @@ export class ActorSystemImpl implements ActorSystem {
             const message = mailbox.dequeue();
             if (message) {
               try {
-                await this.deliverMessageLocal(address, message, {
-                  allowFallbackReentry: options?.reentrantTestDelivery === true,
-                });
+                await this.deliverMessageLocal(address, message);
               } catch (error) {
                 log.error('Error processing message in test mode', {
                   actor: address,
@@ -2155,24 +2162,27 @@ export class ActorSystemImpl implements ActorSystem {
    * Ask an actor and wait for response
    * Uses correlation manager for proper response handling
    */
-  async askActor<T>(address: ActorAddress, message: ActorMessage, timeout: number): Promise<T> {
+  async askActor<T>(
+    address: ActorAddress,
+    message: ActorMessage,
+    timeout: number,
+    parentTurn?: ActorContextManager.ActorContext
+  ): Promise<T> {
     log.debug('🔍 ASK: Starting askActor with correlation manager');
 
     if (this.isKnownRemoteAddress(address)) {
       return this.requestRemoteActorAsk<T>(address, message, timeout);
     }
 
-    return this.askLocalActor(address, message, timeout);
+    return this.askLocalActor(address, message, timeout, parentTurn);
   }
 
   private async askLocalActor<T>(
     address: ActorAddress,
     message: ActorMessage,
-    timeout: number
+    timeout: number,
+    parentTurn?: ActorContextManager.ActorContext
   ): Promise<T> {
-    // Import ask pattern safeguards
-    const { createAskTimeout } = await import('./ask-pattern-safeguards.js');
-
     // Generate correlation ID
     const correlationId = this.correlationManager.generateId();
     log.debug('🔍 ASK: Generated correlationId:', correlationId);
@@ -2203,13 +2213,17 @@ export class ActorSystemImpl implements ActorSystem {
       targetAddress: address,
     });
 
-    await this.enqueueMessage(address, messageWithCorrelation);
-
-    log.debug('🔍 ASK: Waiting for response...');
-
+    const nested: NestedDelivery | undefined = parentTurn && { parentTurn };
+    // Correlation may settle inside the child handler. Do not return a normal
+    // nested reply to the parent until the child's context has been restored.
+    const reply = nested ? responsePromise.finally(() => nested.completion) : responsePromise;
+    const outcome = Promise.race([reply, timeoutPromise]);
     try {
-      // Race between response and timeout
-      const response = await Promise.race([responsePromise, timeoutPromise]);
+      // Observe both promptly: immediate test delivery can itself be waiting on the handler.
+      const [response] = await Promise.all([
+        outcome,
+        this.enqueueMessage(address, messageWithCorrelation, nested),
+      ]);
       cancelTimeout(); // Cancel timeout if we got a response
       log.debug('🔍 ASK: Got response:', response);
 
@@ -2608,11 +2622,7 @@ export class ActorSystemImpl implements ActorSystem {
   /**
    * Deliver message to local actor
    */
-  private async deliverMessageLocal(
-    address: ActorAddress,
-    message: ActorMessage,
-    options?: { allowFallbackReentry?: boolean }
-  ): Promise<void> {
+  private async deliverMessageLocal(address: ActorAddress, message: ActorMessage): Promise<void> {
     log.debug('🔍 DELIVER LOCAL DEBUG: deliverMessageLocal called', {
       actorPath: address,
       messageType: message.type,
@@ -2658,7 +2668,8 @@ export class ActorSystemImpl implements ActorSystem {
       `msg-${Date.now()}`
     );
 
-    return ActorContextManager.safeRunAsync(
+    const nested = this.nestedDeliveries.get(message);
+    const completion = ActorContextManager.safeRunAsync(
       actorContext,
       async () => {
         return this.processMessageWithContext(
@@ -2670,8 +2681,10 @@ export class ActorSystemImpl implements ActorSystem {
         );
       },
       address,
-      options
+      nested?.parentTurn
     );
+    if (nested) nested.completion = completion;
+    return completion;
   }
 
   /**
@@ -4947,6 +4960,9 @@ export class ActorSystemImpl implements ActorSystem {
     actorId: string,
     actorInstance: ActorInstance
   ): ActorDependencies {
+    const parentTurn = ActorContextManager.supportsOverlappingTopLevelAsyncRuns()
+      ? undefined
+      : ActorContextManager.getCurrentContext();
     // Create ActorRef for self reference
     const address = parseActorPath(actorId);
     const selfRef = address
@@ -4978,7 +4994,7 @@ export class ActorSystemImpl implements ActorSystem {
       },
       send: async (to: unknown, message: ActorMessage) => {
         if (to instanceof ActorPIDImpl) {
-          await to.sendFromActor(message);
+          await to.sendFromActor(message, parentTurn);
           return;
         }
 
@@ -4994,14 +5010,35 @@ export class ActorSystemImpl implements ActorSystem {
           }
 
           if (actorRef instanceof ActorPIDImpl) {
-            await actorRef.sendFromActor(message);
+            await actorRef.sendFromActor(message, parentTurn);
           } else {
             await actorRef.send(message);
           }
         }
       },
-      ask: async <T>(_to: unknown, _message: ActorMessage, _timeout?: number) => {
-        return Promise.resolve({} as T);
+      ask: async <T>(to: unknown, message: ActorMessage, timeout?: number) => {
+        const askTimeout = timeout ?? this.config.defaultAskTimeout ?? 5000;
+        const askMessage = message as Message;
+        if (to instanceof ActorPIDImpl) {
+          return to.askFromActor<T>(askMessage, askTimeout, parentTurn);
+        }
+        if (typeof to === 'object' && to !== null && 'ask' in to && typeof to.ask === 'function') {
+          return (to as { ask: (msg: Message, timeout?: number) => Promise<T> }).ask(
+            askMessage,
+            askTimeout
+          );
+        }
+        if (typeof to === 'string') {
+          const actorRef = await this.lookup(to);
+          if (!actorRef) {
+            throw new Error(`Unable to resolve actor "${to}" for dependency ask.`);
+          }
+          if (actorRef instanceof ActorPIDImpl) {
+            return actorRef.askFromActor<T>(askMessage, askTimeout, parentTurn);
+          }
+          return actorRef.ask<T>(askMessage, askTimeout);
+        }
+        throw new Error('Unable to resolve actor for dependency ask.');
       },
       tools: createActorToolbox(
         this.config.tools,
@@ -5260,9 +5297,12 @@ export class ActorSystemImpl implements ActorSystem {
   }
 }
 
-/**
- * Internal implementation of ActorPID
- */
+interface NestedDelivery {
+  readonly parentTurn: ActorContextManager.ActorContext;
+  completion?: Promise<void>;
+}
+
+/** Internal implementation of ActorPID. */
 class ActorPIDImpl implements ActorRef {
   constructor(
     public readonly address: ActorAddress,
@@ -5293,10 +5333,24 @@ class ActorPIDImpl implements ActorRef {
     }
   }
 
-  async sendFromActor<T extends { type: string }>(message: T): Promise<void> {
-    await this.system.enqueueMessage(this.address, message, {
-      reentrantTestDelivery: true,
-    });
+  async sendFromActor<T extends { type: string }>(
+    message: T,
+    parentTurn?: ActorContextManager.ActorContext
+  ): Promise<void> {
+    // A regular send only enqueues. Immediate test delivery can be awaited by its caller.
+    await this.system.enqueueMessage(
+      this.address,
+      message,
+      parentTurn && this.system.isTestMode() ? { parentTurn } : undefined
+    );
+  }
+
+  askFromActor<T>(
+    message: ActorMessage,
+    timeout: number,
+    parentTurn?: ActorContextManager.ActorContext
+  ): Promise<T> {
+    return this.system.askActor<T>(this.address, message, timeout, parentTurn);
   }
 
   async ask<TResponse = JsonValue>(

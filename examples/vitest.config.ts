@@ -35,6 +35,22 @@ export default defineConfig({
         replacement: path.resolve(actorWebRoot, 'packages/actor-core-runtime/src/index.ts'),
       },
       {
+        find: '@actor-web/agent/portable',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/portable.ts'),
+      },
+      {
+        find: '@actor-web/agent/runner',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/runner.ts'),
+      },
+      {
+        find: '@actor-web/agent/terminal',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/terminal.ts'),
+      },
+      {
+        find: '@actor-web/agent/zod',
+        replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/zod.ts'),
+      },
+      {
         find: '@actor-web/agent',
         replacement: path.resolve(actorWebRoot, 'packages/actor-agent/src/index.ts'),
       },

@@ -1,3 +1,5 @@
+import type { ActorRequest } from '@actor-web/runtime/browser';
+
 export const DEFAULT_PONG_SEED = 42;
 
 export const PONG_FIELD = {
@@ -457,7 +459,10 @@ export type PongLobbyCommand =
   | { readonly type: 'START_MATCH'; readonly mode: PongMatchMode };
 
 export type PongMatchCommand =
-  | { readonly type: 'GET_MATCH' }
+  | ActorRequest<{ readonly type: 'GET_MATCH' }, PongMatchState>
+  | ActorRequest<PongMatchMutation, PongMatchCommandResult>;
+
+type PongMatchMutation =
   | {
       readonly type: 'SYNC_SESSION';
       readonly requestSessionId: string;

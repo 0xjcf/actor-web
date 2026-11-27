@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1270" viewBox="0 0 1200 1270" role="img" aria-labelledby="title desc">
+  <title id="title">Parallel SDLC teams: one local VM, one cloud VM</title>
+  <desc id="desc">Proposed architecture, not a live deployment. Read from top to bottom. A shared topology describes three logical nodes. A browser observes the control node's scoped projection through its gateway. An authorized operator command is separate. Task actors own gates, teams admit assignments, and fresh role sessions request bounded work. Authenticated peer transport connects the control node to trusted local and cloud execution hosts. Each host binds an executor actor to a VM adapter and runs a check in its assigned guest. The guests do not need runtime networking. Host receipts return to the task actor; diagnostics feed a read-only projection. Transport connectivity is not a check result.</desc>
+  <defs>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; fill: #15263d; }
+      .title { font-size: 32px; font-weight: 700; }
+      .heading { font-size: 20px; font-weight: 700; }
+      .body { font-size: 16px; }
+      .small { font-size: 14px; }
+      .kicker { font-size: 13px; font-weight: 700; letter-spacing: 1.4px; }
+      .api { font-family: Menlo, Consolas, monospace; font-size: 15px; fill: #134a74; }
+      .sub { fill: #42566c; }
+      .blue { fill: #185385; }
+      .green { fill: #126453; }
+      .ochre { fill: #895010; }
+      .runtime { fill: #edf5fc; stroke: #90b4d4; }
+      .app { fill: #eaf6f1; stroke: #86b8a6; }
+      .host { fill: #fff5e5; stroke: #cea768; }
+      .guest { fill: #fff; stroke: #90672d; stroke-width: 1.5; stroke-dasharray: 7 4; }
+      .panel { fill: #fff; stroke: #acbac7; }
+      .edge { fill: none; stroke: #455d73; stroke-width: 2; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#455d73"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="1270" fill="#f7f9fb"/>
+  <g transform="translate(40,32)">
+    <text class="kicker blue">LIVE VM DEPLOYMENT  /  PROPOSED AFTER SPRINT 2</text>
+    <text y="42" class="title">Two teams. Two VM locations. One dashboard.</text>
+    <text y="70" class="body sub">Sprint 2 runs three processes on loopback. This proposed deployment adds VM adapters and guest checks; neither VM runs today.</text>
+    <rect y="85" width="17" height="13" rx="3" class="runtime"/>
+    <text x="25" y="97" class="small">Actor-Web primitive / API</text>
+    <rect x="244" y="85" width="17" height="13" rx="3" class="app"/>
+    <text x="269" y="97" class="small">Proposed demo / Board logic</text>
+    <rect x="522" y="85" width="17" height="13" rx="3" class="host"/>
+    <text x="547" y="97" class="small">Trusted execution host / infrastructure</text>
+  </g>
+
+  <g transform="translate(40,150)">
+    <rect width="1120" height="69" rx="10" class="runtime"/>
+    <text x="18" y="26" class="kicker blue">SHARED CONTRACT  ·  DESCRIBES OWNERSHIP; DOES NOT DEPLOY MACHINES</text>
+    <text x="18" y="51" class="api">defineTopology({ nodes, actors, tools })</text>
+    <text x="508" y="51" class="body">node() = location · actor() = actor definition · tool() = named port</text>
+  </g>
+
+  <g transform="translate(40,241)">
+    <text class="kicker">01  /  BROWSER AND OPERATOR</text>
+    <rect y="13" width="546" height="77" rx="9" class="runtime"/>
+    <text x="16" y="39" class="heading">Dashboard · observe both authorized lanes</text>
+    <text x="16" y="61" class="api">createReadModelClient(...)</text>
+    <text x="16" y="81" class="small sub">snapshot(), subscribe(), subscribeEvent(), transportStatus()</text>
+    <rect x="574" y="13" width="546" height="77" rx="9" class="runtime"/>
+    <text x="590" y="39" class="heading">Operator controls · explicit actions only</text>
+    <text x="590" y="61" class="api">actor.commands(...) → send() / ask()</text>
+    <text x="590" y="81" class="small sub">Separate command admission; opening a view never starts a task.</text>
+  </g>
+  <path class="edge" d="M313 353 V332" marker-end="url(#arrow)"/>
+  <path class="edge" d="M887 332 V353" marker-end="url(#arrow)"/>
+
+  <g transform="translate(40,355)">
+    <rect width="1120" height="254" rx="12" class="panel"/>
+    <rect x="1" y="1" width="1118" height="58" rx="11" class="runtime"/>
+    <text x="18" y="25" class="kicker blue">02  /  CONTROL NODE  ·  serveNode(topology, { node: 'control', … })</text>
+    <text x="18" y="47" class="body">Gateway: scoped snapshots and events out; authenticated, separately authorized commands in. Not the peer channel.</text>
+    <rect x="16" y="72" width="346" height="105" rx="8" class="app"/>
+    <text x="30" y="99" class="heading">Task actor · one per task run</text>
+    <text x="30" y="124" class="body">Requests assignments, checks receipts.</text>
+    <text x="30" y="146" class="body">Only this actor advances or holds a task.</text>
+    <text x="30" y="167" class="small green">Primitive: defineBehavior().withMachine(...)</text>
+    <path class="edge" d="M363 125 H385" marker-end="url(#arrow)"/>
+    <rect x="388" y="72" width="346" height="105" rx="8" class="app"/>
+    <text x="402" y="99" class="heading">Team actor · admit and select</text>
+    <text x="402" y="124" class="body">Pin named roles, revisions and grants.</text>
+    <text x="402" y="146" class="body">Delivery Lead observes; Tech Lead plans.</text>
+    <text x="402" y="167" class="small green">Admission is not evidence of execution.</text>
+    <path class="edge" d="M735 125 H757" marker-end="url(#arrow)"/>
+    <rect x="760" y="72" width="344" height="105" rx="8" class="app"/>
+    <text x="774" y="99" class="heading">Focused specialist session</text>
+    <text x="774" y="124" class="body">Plan → Build → Test → Review; demo</text>
+    <text x="774" y="146" class="body">also records Document. One role per session.</text>
+    <text x="774" y="167" class="small green">system.spawn() · ActorRef.ask() · stop()</text>
+    <rect x="16" y="190" width="1088" height="48" rx="7" class="app"/>
+    <text x="30" y="211" class="body">Scoped progress projection: joins task decisions, agent/session traces and host observations for the dashboard.</text>
+    <text x="30" y="230" class="small sub">The projection is read-only. Missing telemetry means stale / unknown; it is not a failed check or permission to retry.</text>
+  </g>
+
+  <g transform="translate(40,630)">
+    <text class="kicker blue">03  /  CONTROL NODE ↔ EXECUTION HOSTS  ·  MessageTransport  ·  AUTHENTICATED PEERS</text>
+    <text y="25" class="body">Out: assignment + check ID + artifact reference.  Back: host observations + receipt reference.  Ordinary send is at-most-once.</text>
+    <path class="edge" d="M272 52 V36 H848 V52" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <path class="edge" d="M560 36 V26"/>
+  </g>
+
+  <g transform="translate(40,687)">
+    <rect width="546" height="290" rx="10" class="panel"/>
+    <rect x="1" y="1" width="544" height="63" rx="9" class="runtime"/>
+    <text x="16" y="26" class="kicker blue">LANE A  /  LOCAL EXECUTION HOST</text>
+    <text x="16" y="50" class="api">serveNode(...) · local executor actor</text>
+    <rect x="14" y="78" width="518" height="82" rx="7" class="host"/>
+    <text x="28" y="104" class="heading">Trusted local VM adapter</text>
+    <text x="28" y="127" class="body">tools.execute(...) invokes the host-supplied implementation.</text>
+    <text x="28" y="149" class="small ochre">Enforces grants, disk reserve, resource limits and cleanup.</text>
+    <path class="edge" d="M272 161 V181" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <rect x="14" y="184" width="518" height="91" rx="7" class="guest"/>
+    <text x="28" y="210" class="heading">Local VM · checkout</text>
+    <text x="28" y="234" class="body">Workspace A · Team A · checkout@3 · candidate A</text>
+    <text x="28" y="257" class="small sub">Runs the pinned check on A's input; exports A's report.</text>
+  </g>
+  <g transform="translate(614,687)">
+    <rect width="546" height="290" rx="10" class="panel"/>
+    <rect x="1" y="1" width="544" height="63" rx="9" class="runtime"/>
+    <text x="16" y="26" class="kicker blue">LANE B  /  CLOUD EXECUTION HOST</text>
+    <text x="16" y="50" class="api">serveNode(...) · cloud executor actor</text>
+    <rect x="14" y="78" width="518" height="82" rx="7" class="host"/>
+    <text x="28" y="104" class="heading">Trusted cloud VM adapter</text>
+    <text x="28" y="127" class="body">Implements the same tool port on the remote host.</text>
+    <text x="28" y="149" class="small ochre">Enforces grants, resource / spend limits and cleanup.</text>
+    <path class="edge" d="M272 161 V181" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <rect x="14" y="184" width="518" height="91" rx="7" class="guest"/>
+    <text x="28" y="210" class="heading">Cloud VM · profile</text>
+    <text x="28" y="234" class="body">Workspace B · Team B · profile@1 · candidate B</text>
+    <text x="28" y="257" class="small sub">Runs the same check on B's input; exports B's report.</text>
+  </g>
+
+  <g transform="translate(40,1005)">
+    <text class="kicker">04  /  EVIDENCE AND OBSERVABILITY  ·  THREE DIFFERENT QUESTIONS</text>
+    <rect y="14" width="355" height="136" rx="9" class="runtime"/>
+    <text x="14" y="42" class="heading">Can I reach the worker?</text>
+    <text x="14" y="76" class="api">getPeerStatus(nodeAddress)</text>
+    <text x="14" y="101" class="body">Peer freshness, gaps and backpressure.</text>
+    <text x="14" y="128" class="small sub">A heartbeat does not prove guest health.</text>
+    <rect x="373" y="14" width="369" height="136" rx="9" class="app"/>
+    <text x="387" y="42" class="heading">What did the session report?</text>
+    <text x="387" y="76" class="body">Role, attempt, tool requests and outcomes.</text>
+    <text x="387" y="101" class="body">Model usage only if actually observed.</text>
+    <text x="387" y="128" class="small sub">A scripted role is not a live model call.</text>
+    <rect x="760" y="14" width="360" height="136" rx="9" class="host"/>
+    <text x="774" y="42" class="heading">What ran in the VM?</text>
+    <text x="774" y="76" class="body">Host: guest ID, CPU, memory, disk, cleanup.</text>
+    <text x="774" y="101" class="body">Receipt: image, candidate digest, check exit.</text>
+    <text x="774" y="128" class="small sub">Receipts live outside guest-writable storage.</text>
+    <text y="181" class="body">Join by workspace / task revision → team / session / attempt → executor generation → candidate digest.</text>
+    <text y="206" class="body">A stale guest’s receipt cannot advance its replacement. Unknown settlement holds that lane; never replay blindly.</text>
+    <text y="237" class="small sub">Trust boundary: guest checks need no runtime-peer access, shared home directory or cloud credentials. VM provisioning is not an Actor-Web API.</text>
+  </g>
+</svg>

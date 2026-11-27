@@ -1,0 +1,1227 @@
+{
+  "baselineTrial": "20261125T165539Z",
+  "rerunTrial": "20261125T170837Z",
+  "workspaceBase": "d616cccc8a1e469e66477e8a91268def9e85c162",
+  "rerunSourceSha256": {
+    "examples/retail-investigation/demo.ts": "54fb30b8e3ba393eea3b2efb8984014a3e3a831e5c79cd9dcdefddebbaaaf616",
+    "examples/retail-investigation/evaluation.ts": "7ce1f177e95082a3b00ac53aea697d0d622e3b774ff9bbcc98ad9ccf1f5c6d6c",
+    "examples/retail-investigation/evidence.ts": "a97f790a402c97e4ee8c344b8a9b125621ab35143f51f2e76da8b29de8611483",
+    "examples/retail-investigation/fixtures.ts": "6d64b2d1f30baf87dbead3b8a3469f52fef40b7e27a155c95e3ac160c423b914",
+    "examples/retail-investigation/investigation.ts": "473724123dd62b5dc3ac72ce7ae9ccd05b3623e39b8c08908e40f3f9ed78e1d3",
+    "examples/retail-investigation/policy.ts": "114de7e73c1950b7eaa60affa943d231fca80dcfaf4a5bc387b5db4be6d07adb",
+    "examples/retail-investigation/scripted-provider.ts": "c5202e2991c746c8f2c5605fd86130b44c34db8a55f350674ef084bf97fa29b3",
+    "examples/retail-investigation/package.json": "f98c55c6bd3f13484251f2b5d16b0ba773666a9abfa4819b45bf2ca39cb494d0",
+    "examples/retail-investigation/dist/demo.js": "820aab1cc1f779f3404d5afee77331745ec172da18f41c142005c403bf892a1b",
+    "examples/retail-analyst/sales-analysis.ts": "54606cbe71e90dd0f223596ea911de68e968e85506d19f232dc74dd6e1c5d11e"
+  },
+  "baselineReport": {
+    "file": "20261125T165539Z-live.json.gz",
+    "uncompressedSha256": "9aa73c5782afd8dc7257167b817896679859013e203628eebda6e56e538ce1df",
+    "gzipSha256": "a508a3bd6da167e47d96b583306d861c6a7a48e872bde82de11715144dc5a1d7",
+    "startedAt": "2026-11-25T16:55:39.821Z",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-4.1-mini",
+      "settings": {
+        "status": "captured",
+        "value": {
+          "temperature": 0,
+          "max_completion_tokens": 900,
+          "parallelToolCalls": false
+        }
+      }
+    },
+    "bounds": {
+      "maxCalls": 54,
+      "maxReadsPerAssignment": 6,
+      "retries": 0
+    }
+  },
+  "rerunReport": {
+    "file": "20261125T170837Z-live.json.gz",
+    "gzipSha256": "917ce4b9ae3fefd5f8f74ca3ec775bb784359ce5389972876d53416771b8a299",
+    "uncompressedSha256": "380b491e5839587c0f357b32cc557cc023825fe56721bcec4cd7f4598c2462d6",
+    "startedAt": "2026-11-25T17:08:37.391Z",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-4.1-mini",
+      "settings": {
+        "status": "captured",
+        "value": {
+          "temperature": 0,
+          "max_completion_tokens": 900,
+          "parallelToolCalls": false
+        }
+      }
+    },
+    "bounds": {
+      "maxCalls": 54,
+      "maxReadsPerAssignment": 6,
+      "retries": 0
+    }
+  },
+  "comparison": "Same six cases, order, requested model/settings, evaluator and budgets; archived live v1 vs new live adaptive v2 with fixed and rules v1 rerun. Denominator includes all attempts. Only one trial per case/version; not blinded or statistically conclusive. Token totals use only reported usage.",
+  "totals": {
+    "baseline": {
+      "fixed": {
+        "assignments": 6,
+        "accepted": 5,
+        "passed": {
+          "numericCorrect": 5,
+          "statusMatchesFixture": 5,
+          "findingKindsMatchFixture": 1
+        },
+        "modelCalls": 6,
+        "portReads": 36,
+        "meanDurationMsIncludingRejections": 2731.7,
+        "assignmentsWithReportedUsage": 5,
+        "totalReportedTokens": {
+          "inputTokens": 15956,
+          "outputTokens": 1301
+        },
+        "failures": {
+          "LLM_PROVIDER_UNAVAILABLE": 1
+        }
+      },
+      "rules": {
+        "assignments": 6,
+        "accepted": 6,
+        "passed": {
+          "numericCorrect": 6,
+          "statusMatchesFixture": 6,
+          "findingKindsMatchFixture": 2
+        },
+        "modelCalls": 6,
+        "portReads": 25,
+        "meanDurationMsIncludingRejections": 3287.3,
+        "assignmentsWithReportedUsage": 6,
+        "totalReportedTokens": {
+          "inputTokens": 18326,
+          "outputTokens": 1439
+        },
+        "failures": {}
+      },
+      "adaptive": {
+        "assignments": 6,
+        "accepted": 1,
+        "passed": {
+          "numericCorrect": 1,
+          "statusMatchesFixture": 1,
+          "findingKindsMatchFixture": 0
+        },
+        "modelCalls": 28,
+        "portReads": 22,
+        "meanDurationMsIncludingRejections": 7818.2,
+        "assignmentsWithReportedUsage": 6,
+        "totalReportedTokens": {
+          "inputTokens": 97269,
+          "outputTokens": 2430
+        },
+        "failures": {
+          "INVALID_TOOL_INPUT": 4,
+          "SCOPE_DENIED": 1
+        }
+      }
+    },
+    "rerun": {
+      "fixed": {
+        "assignments": 6,
+        "accepted": 6,
+        "passed": {
+          "numericCorrect": 6,
+          "statusMatchesFixture": 6,
+          "findingKindsMatchFixture": 1
+        },
+        "modelCalls": 6,
+        "portReads": 36,
+        "meanDurationMsIncludingRejections": 3355.3,
+        "assignmentsWithReportedUsage": 6,
+        "totalReportedTokens": {
+          "inputTokens": 20200,
+          "outputTokens": 1601
+        },
+        "failures": {}
+      },
+      "rules": {
+        "assignments": 6,
+        "accepted": 6,
+        "passed": {
+          "numericCorrect": 6,
+          "statusMatchesFixture": 6,
+          "findingKindsMatchFixture": 2
+        },
+        "modelCalls": 6,
+        "portReads": 25,
+        "meanDurationMsIncludingRejections": 2954.2,
+        "assignmentsWithReportedUsage": 6,
+        "totalReportedTokens": {
+          "inputTokens": 18326,
+          "outputTokens": 1431
+        },
+        "failures": {}
+      },
+      "adaptive": {
+        "assignments": 6,
+        "accepted": 6,
+        "passed": {
+          "numericCorrect": 6,
+          "statusMatchesFixture": 6,
+          "findingKindsMatchFixture": 1
+        },
+        "modelCalls": 37,
+        "portReads": 31,
+        "meanDurationMsIncludingRejections": 9018.5,
+        "assignmentsWithReportedUsage": 6,
+        "totalReportedTokens": {
+          "inputTokens": 84827,
+          "outputTokens": 2994
+        },
+        "failures": {}
+      }
+    }
+  },
+  "rerunAdaptiveReasonOnlyRequests": 31,
+  "pairs": [
+    {
+      "caseId": "promotion",
+      "strategy": "fixed",
+      "expected": {
+        "status": "supported",
+        "kinds": ["promotion"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration", "promotion"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 4244,
+          "outputTokens": 349
+        },
+        "durationMs": 5323
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration", "promotion"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 4244,
+          "outputTokens": 342
+        },
+        "durationMs": 5413
+      }
+    },
+    {
+      "caseId": "promotion",
+      "strategy": "rules",
+      "expected": {
+        "status": "supported",
+        "kinds": ["promotion"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration", "promotion"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_orders",
+          "read_inventory",
+          "read_promotions",
+          "read_weather",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 4244,
+          "outputTokens": 326
+        },
+        "durationMs": 4328
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration", "promotion"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_orders",
+          "read_inventory",
+          "read_promotions",
+          "read_weather",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 4244,
+          "outputTokens": 322
+        },
+        "durationMs": 4078
+      }
+    },
+    {
+      "caseId": "promotion",
+      "strategy": "adaptive",
+      "expected": {
+        "status": "supported",
+        "kinds": ["promotion"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-adaptive",
+        "outcome": "rejected",
+        "failure": "INVALID_TOOL_INPUT",
+        "assessmentStatus": null,
+        "findingKinds": null,
+        "checks": null,
+        "reads": ["read_sales", "read_promotions", "read_inventory"],
+        "modelCalls": 4,
+        "requestedTools": 4,
+        "rejectedTools": 1,
+        "usage": {
+          "inputTokens": 13064,
+          "outputTokens": 290
+        },
+        "durationMs": 6508
+      },
+      "rerun": {
+        "revision": "retail-investigation-v2-adaptive",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration", "promotion"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_promotions", "read_inventory", "read_orders", "read_weather"],
+        "modelCalls": 6,
+        "requestedTools": 5,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 15547,
+          "outputTokens": 569
+        },
+        "durationMs": 10228
+      }
+    },
+    {
+      "caseId": "restocking",
+      "strategy": "rules",
+      "expected": {
+        "status": "supported",
+        "kinds": ["availability-recovery"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_orders", "read_inventory"],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 2743,
+          "outputTokens": 317
+        },
+        "durationMs": 4047
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_orders", "read_inventory"],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 2743,
+          "outputTokens": 310
+        },
+        "durationMs": 4175
+      }
+    },
+    {
+      "caseId": "restocking",
+      "strategy": "adaptive",
+      "expected": {
+        "status": "supported",
+        "kinds": ["availability-recovery"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-adaptive",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_promotions", "read_inventory", "read_orders", "read_weather"],
+        "modelCalls": 6,
+        "requestedTools": 5,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 24558,
+          "outputTokens": 747
+        },
+        "durationMs": 13607
+      },
+      "rerun": {
+        "revision": "retail-investigation-v2-adaptive",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_promotions", "read_inventory", "read_orders", "read_weather"],
+        "modelCalls": 6,
+        "requestedTools": 5,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 13437,
+          "outputTokens": 525
+        },
+        "durationMs": 10101
+      }
+    },
+    {
+      "caseId": "restocking",
+      "strategy": "fixed",
+      "expected": {
+        "status": "supported",
+        "kinds": ["availability-recovery"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 3237,
+          "outputTokens": 285
+        },
+        "durationMs": 2797
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 3237,
+          "outputTokens": 280
+        },
+        "durationMs": 3255
+      }
+    },
+    {
+      "caseId": "bulk-order",
+      "strategy": "adaptive",
+      "expected": {
+        "status": "supported",
+        "kinds": ["order-concentration"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-adaptive",
+        "outcome": "rejected",
+        "failure": "INVALID_TOOL_INPUT",
+        "assessmentStatus": null,
+        "findingKinds": null,
+        "checks": null,
+        "reads": ["read_sales", "read_promotions", "read_inventory"],
+        "modelCalls": 4,
+        "requestedTools": 4,
+        "rejectedTools": 1,
+        "usage": {
+          "inputTokens": 12989,
+          "outputTokens": 308
+        },
+        "durationMs": 5641
+      },
+      "rerun": {
+        "revision": "retail-investigation-v2-adaptive",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_promotions", "read_inventory", "read_orders", "read_weather"],
+        "modelCalls": 6,
+        "requestedTools": 5,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 13300,
+          "outputTokens": 480
+        },
+        "durationMs": 9573
+      }
+    },
+    {
+      "caseId": "bulk-order",
+      "strategy": "fixed",
+      "expected": {
+        "status": "supported",
+        "kinds": ["order-concentration"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 3185,
+          "outputTokens": 263
+        },
+        "durationMs": 3229
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 3185,
+          "outputTokens": 241
+        },
+        "durationMs": 2992
+      }
+    },
+    {
+      "caseId": "bulk-order",
+      "strategy": "rules",
+      "expected": {
+        "status": "supported",
+        "kinds": ["order-concentration"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": true,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_orders"],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 2495,
+          "outputTokens": 169
+        },
+        "durationMs": 2835
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": true,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_orders"],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 2495,
+          "outputTokens": 173
+        },
+        "durationMs": 2090
+      }
+    },
+    {
+      "caseId": "data-defect",
+      "strategy": "fixed",
+      "expected": {
+        "status": "supported",
+        "kinds": ["duplicate-records"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 4192,
+          "outputTokens": 270
+        },
+        "durationMs": 3264
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 4192,
+          "outputTokens": 264
+        },
+        "durationMs": 3072
+      }
+    },
+    {
+      "caseId": "data-defect",
+      "strategy": "rules",
+      "expected": {
+        "status": "supported",
+        "kinds": ["duplicate-records"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_orders"],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 3502,
+          "outputTokens": 196
+        },
+        "durationMs": 3147
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_orders"],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 3502,
+          "outputTokens": 191
+        },
+        "durationMs": 2417
+      }
+    },
+    {
+      "caseId": "data-defect",
+      "strategy": "adaptive",
+      "expected": {
+        "status": "supported",
+        "kinds": ["duplicate-records"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-adaptive",
+        "outcome": "rejected",
+        "failure": "INVALID_TOOL_INPUT",
+        "assessmentStatus": null,
+        "findingKinds": null,
+        "checks": null,
+        "reads": ["read_sales", "read_promotions", "read_inventory"],
+        "modelCalls": 4,
+        "requestedTools": 4,
+        "rejectedTools": 1,
+        "usage": {
+          "inputTokens": 12989,
+          "outputTokens": 308
+        },
+        "durationMs": 6639
+      },
+      "rerun": {
+        "revision": "retail-investigation-v2-adaptive",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "supported",
+        "findingKinds": ["availability-recovery", "order-concentration"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_promotions", "read_inventory", "read_orders", "read_weather"],
+        "modelCalls": 6,
+        "requestedTools": 5,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 15336,
+          "outputTokens": 477
+        },
+        "durationMs": 7957
+      }
+    },
+    {
+      "caseId": "confounded",
+      "strategy": "rules",
+      "expected": {
+        "status": "confounded",
+        "kinds": ["promotion", "weather-association"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "confounded",
+        "findingKinds": ["availability-recovery", "promotion", "weather-association"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_orders",
+          "read_inventory",
+          "read_promotions",
+          "read_weather",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 4244,
+          "outputTokens": 310
+        },
+        "durationMs": 3457
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "confounded",
+        "findingKinds": ["availability-recovery", "promotion", "weather-association"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_orders",
+          "read_inventory",
+          "read_promotions",
+          "read_weather",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 4244,
+          "outputTokens": 301
+        },
+        "durationMs": 3107
+      }
+    },
+    {
+      "caseId": "confounded",
+      "strategy": "adaptive",
+      "expected": {
+        "status": "confounded",
+        "kinds": ["promotion", "weather-association"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-adaptive",
+        "outcome": "rejected",
+        "failure": "INVALID_TOOL_INPUT",
+        "assessmentStatus": null,
+        "findingKinds": null,
+        "checks": null,
+        "reads": ["read_sales", "read_promotions", "read_inventory"],
+        "modelCalls": 4,
+        "requestedTools": 4,
+        "rejectedTools": 1,
+        "usage": {
+          "inputTokens": 13071,
+          "outputTokens": 294
+        },
+        "durationMs": 5749
+      },
+      "rerun": {
+        "revision": "retail-investigation-v2-adaptive",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "confounded",
+        "findingKinds": [
+          "availability-recovery",
+          "order-concentration",
+          "promotion",
+          "weather-association"
+        ],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": ["read_sales", "read_promotions", "read_inventory", "read_orders", "read_weather"],
+        "modelCalls": 6,
+        "requestedTools": 5,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 15547,
+          "outputTokens": 528
+        },
+        "durationMs": 7891
+      }
+    },
+    {
+      "caseId": "confounded",
+      "strategy": "fixed",
+      "expected": {
+        "status": "confounded",
+        "kinds": ["promotion", "weather-association"]
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "rejected",
+        "failure": "LLM_PROVIDER_UNAVAILABLE",
+        "assessmentStatus": null,
+        "findingKinds": null,
+        "checks": null,
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": null,
+        "durationMs": 39
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "confounded",
+        "findingKinds": ["availability-recovery", "promotion", "weather-association"],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": false,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 4244,
+          "outputTokens": 340
+        },
+        "durationMs": 3514
+      }
+    },
+    {
+      "caseId": "insufficient",
+      "strategy": "adaptive",
+      "expected": {
+        "status": "insufficient-evidence",
+        "kinds": []
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-adaptive",
+        "outcome": "rejected",
+        "failure": "SCOPE_DENIED",
+        "assessmentStatus": null,
+        "findingKinds": null,
+        "checks": null,
+        "reads": ["read_sales", "read_promotions", "read_inventory", "read_orders", "read_weather"],
+        "modelCalls": 6,
+        "requestedTools": 6,
+        "rejectedTools": 1,
+        "usage": {
+          "inputTokens": 20598,
+          "outputTokens": 483
+        },
+        "durationMs": 8765
+      },
+      "rerun": {
+        "revision": "retail-investigation-v2-adaptive",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "insufficient-evidence",
+        "findingKinds": [],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": true,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_orders",
+          "read_weather",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 7,
+        "requestedTools": 6,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 11660,
+          "outputTokens": 415
+        },
+        "durationMs": 8361
+      }
+    },
+    {
+      "caseId": "insufficient",
+      "strategy": "fixed",
+      "expected": {
+        "status": "insufficient-evidence",
+        "kinds": []
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "insufficient-evidence",
+        "findingKinds": [],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": true,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 1098,
+          "outputTokens": 134
+        },
+        "durationMs": 1738
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-fixed",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "insufficient-evidence",
+        "findingKinds": [],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": true,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_promotions",
+          "read_inventory",
+          "read_weather",
+          "read_orders",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 1098,
+          "outputTokens": 134
+        },
+        "durationMs": 1886
+      }
+    },
+    {
+      "caseId": "insufficient",
+      "strategy": "rules",
+      "expected": {
+        "status": "insufficient-evidence",
+        "kinds": []
+      },
+      "baseline": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "insufficient-evidence",
+        "findingKinds": [],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": true,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_orders",
+          "read_inventory",
+          "read_promotions",
+          "read_weather",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 1098,
+          "outputTokens": 121
+        },
+        "durationMs": 1910
+      },
+      "rerun": {
+        "revision": "retail-investigation-v1-rules",
+        "outcome": "accepted",
+        "failure": null,
+        "assessmentStatus": "insufficient-evidence",
+        "findingKinds": [],
+        "checks": {
+          "numericCorrect": true,
+          "statusMatchesFixture": true,
+          "findingKindsMatchFixture": true,
+          "semanticQuality": "requires-review"
+        },
+        "reads": [
+          "read_sales",
+          "read_orders",
+          "read_inventory",
+          "read_promotions",
+          "read_weather",
+          "read_comparison_sales"
+        ],
+        "modelCalls": 1,
+        "requestedTools": 0,
+        "rejectedTools": 0,
+        "usage": {
+          "inputTokens": 1098,
+          "outputTokens": 134
+        },
+        "durationMs": 1858
+      }
+    }
+  ]
+}

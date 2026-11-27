@@ -1,6 +1,6 @@
 {
   "name": "@actor-web/runtime",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Core actor model runtime for universal actor-based applications",
   "type": "module",
   "main": "dist/index.cjs",
@@ -13,7 +13,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/browser.ts src/topology-entry.ts src/node.ts src/event-sourcing-entry.ts src/source.ts --format cjs,esm && tsc --emitDeclarationOnly && node ../../scripts/verify-exports.mjs .",
+    "build": "tsup src/index.ts src/browser.ts src/topology-entry.ts src/node.ts src/event-sourcing-entry.ts src/source.ts src/definition.ts --format cjs,esm && tsc --emitDeclarationOnly && node ../../scripts/verify-exports.mjs .",
     "build:watch": "pnpm build --watch",
     "dev": "vitest --watch",
     "test": "vitest run",
@@ -79,6 +79,11 @@
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js",
       "require": "./dist/node.cjs"
+    },
+    "./definition": {
+      "types": "./dist/definition.d.ts",
+      "import": "./dist/definition.js",
+      "require": "./dist/definition.cjs"
     },
     "./event-sourcing": {
       "types": "./dist/event-sourcing-entry.d.ts",

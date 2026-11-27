@@ -17,12 +17,12 @@
     "test:agent": "pnpm --filter @actor-web/agent test",
     "test:all": "pnpm test && pnpm test:agent && pnpm test:cli && pnpm test:learning",
     "lint": "biome check . && pnpm lint:md",
-    "lint:md": "markdownlint-cli2 --config .markdownlint.jsonc \".fas/TASKS.md\" \".fas/tasks/**/*.md\"",
-    "lint:md:all": "markdownlint-cli2 --config .markdownlint.jsonc \"*.md\" \".github/**/*.md\" \".fas/TASKS.md\" \".fas/tasks/**/*.md\" \"docs/**/*.md\" \"examples/**/*.md\" \"packages/**/*.md\" \"tests/**/*.md\" \"#**/node_modules/**\" \"#**/dist/**\" \"#.pnpm-store/**\"",
+    "lint:md": "markdownlint-cli2 --config .markdownlint.jsonc \"AGENTS.md\" \"CLAUDE.md\"",
+    "lint:md:all": "markdownlint-cli2 --config .markdownlint.jsonc \"*.md\" \".github/**/*.md\" \"docs/**/*.md\" \"examples/**/*.md\" \"packages/**/*.md\" \"tests/**/*.md\" \"#**/node_modules/**\" \"#**/dist/**\" \"#.pnpm-store/**\"",
     "architecture:check": "node scripts/check-architecture-boundaries.mjs",
     "format": "biome format . --write && pnpm format:md",
-    "format:md": "markdownlint-cli2 --fix --config .markdownlint.jsonc \".fas/TASKS.md\" \".fas/tasks/**/*.md\"",
-    "format:md:all": "markdownlint-cli2 --fix --config .markdownlint.jsonc \"*.md\" \".github/**/*.md\" \".fas/TASKS.md\" \".fas/tasks/**/*.md\" \"docs/**/*.md\" \"examples/**/*.md\" \"packages/**/*.md\" \"tests/**/*.md\" \"#**/node_modules/**\" \"#**/dist/**\" \"#.pnpm-store/**\"",
+    "format:md": "markdownlint-cli2 --fix --config .markdownlint.jsonc \"AGENTS.md\" \"CLAUDE.md\"",
+    "format:md:all": "markdownlint-cli2 --fix --config .markdownlint.jsonc \"*.md\" \".github/**/*.md\" \"docs/**/*.md\" \"examples/**/*.md\" \"packages/**/*.md\" \"tests/**/*.md\" \"#**/node_modules/**\" \"#**/dist/**\" \"#.pnpm-store/**\"",
     "typecheck": "tsc --build",
     "clean": "pnpm --filter @actor-web/runtime clean && pnpm --filter @actor-web/testing clean && pnpm --filter @actor-web/agent clean && pnpm --filter @actor-web/lattice clean && pnpm --filter @actor-web/labs-mesh clean && pnpm --filter @actor-web/cli clean && rm -rf dist packages/*/*.tsbuildinfo",
     "test:coverage": "vitest run --coverage",
@@ -36,7 +36,11 @@
     "deps:clean": "pnpm store prune && rm -rf node_modules pnpm-lock.yaml && pnpm install",
     "examples:dev": "vite examples --config examples/vite.config.ts",
     "examples:dev:local": "vite examples --config examples/vite.config.ts --host 127.0.0.1 --port 4173",
+    "examples:queue-board": "node scripts/dev-queue-board.mjs",
     "examples:logistics": "vite-node --config examples/vite.config.ts scripts/dev-logistics-demo.ts",
+    "examples:logistics:prompt": "NODE_ENV=production vite-node --config examples/vitest.config.ts examples/ignite-headless-host/logistics-prompt-demo.ts",
+    "examples:parallel-teams": "vite-node --config examples/vitest.config.ts examples/parallel-sdlc-teams/demo.ts",
+    "examples:parallel-teams:loopback": "vite-node --config examples/vitest.config.ts examples/parallel-sdlc-teams/loopback/demo.ts",
     "examples:logistics:server": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-server-process.ts",
     "examples:logistics:worker": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-worker-process.ts",
     "examples:logistics:provider": "vite-node --config examples/vite.config.ts examples/ignite-headless-host/logistics-provider-process.ts",
@@ -64,7 +68,11 @@
     "release": "pnpm release:stable",
     "release:prepare": "node scripts/release.mjs --channel stable --prepare-only",
     "release:stable": "node scripts/release.mjs --channel stable",
-    "release:beta": "node scripts/release.mjs --channel beta"
+    "release:beta": "node scripts/release.mjs --channel beta",
+    "examples:analyst": "pnpm --filter @actor-web/example-retail-analyst demo",
+    "examples:analyst:live": "pnpm --filter @actor-web/example-retail-analyst live",
+    "examples:investigation": "pnpm --filter @actor-web/example-retail-investigation demo",
+    "examples:investigation:evaluate": "pnpm --filter @actor-web/example-retail-investigation evaluate"
   },
   "keywords": [
     "actor-model",
@@ -91,6 +99,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.1.2",
     "@changesets/cli": "^2.29.8",
+    "@ignite-element/renderer": "3.0.0-beta.8",
     "@types/node": "^20.0.0",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^2.1.4",
@@ -102,7 +111,8 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
     "vitest": "^2.1.4",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "xstate": "5.30.0"
   },
   "engines": {
     "node": ">=20.0.0"

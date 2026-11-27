@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { createServer } from 'node:http';
 import { describe, expect, it, vi } from 'vitest';
-import { serveActorWebHttp } from '../serve-actor-web-http.js';
+import { serveHttp } from '../serve-actor-web-http.js';
 import { serveNode } from '../serve-actor-web-node.js';
-import { actor, defineActorWebTopology, node } from '../topology.js';
+import { actor, defineTopology, node } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 vi.mock('node:http', async () => {
@@ -40,7 +40,7 @@ function createCounterBehavior() {
     .build();
 }
 
-const topology = defineActorWebTopology({
+const topology = defineTopology({
   nodes: {
     server: node('server-node'),
   },
@@ -76,10 +76,10 @@ class FakeHttpServer extends EventEmitter {
   }
 }
 
-describe('serveActorWebHttp', () => {
+describe('serveHttp', () => {
   it('serves route-first HTTP handlers with topology actors and response helpers', async () => {
     const runtime = await serveNode(topology, { node: 'server' });
-    const http = await serveActorWebHttp(runtime)
+    const http = await serveHttp(runtime)
       .post('/counters/:id', async (request, response, { actors }) => {
         const body = request.body as { amount?: number };
         await actors.counter.send({ type: 'INCREMENT', amount: body.amount });
@@ -114,7 +114,7 @@ describe('serveActorWebHttp', () => {
 
   it('infers a selected actor for .for() bound routes', async () => {
     const runtime = await serveNode(topology, { node: 'server' });
-    const http = await serveActorWebHttp(runtime)
+    const http = await serveHttp(runtime)
       .for(topology.actors.counter)
       .put('/counter', async (request, response, { actor }) => {
         const body = request.body as { count: number };
@@ -153,7 +153,7 @@ describe('serveActorWebHttp', () => {
     );
     createServerMock.mockImplementationOnce(() => fakeServer as never);
 
-    const http = await serveActorWebHttp({
+    const http = await serveHttp({
       getActor: () => undefined,
       requireActor: () => {
         throw new Error('not used');
@@ -175,7 +175,7 @@ describe('serveActorWebHttp', () => {
     createServerMock.mockImplementationOnce(() => fakeServer as never);
 
     await expect(
-      serveActorWebHttp({
+      serveHttp({
         getActor: () => undefined,
         requireActor: () => {
           throw new Error('not used');

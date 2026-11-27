@@ -261,10 +261,10 @@ export class PureXStateTimeoutManager {
 
     timeoutActor.subscribe((state) => {
       if (state.matches('completed')) {
-        // Execute callback and cleanup
+        // The expired timer is no longer cancellable when its callback runs.
+        this.timeouts.delete(timeoutId);
         callback();
         timeoutActor.stop(); // ✅ CRITICAL FIX: Stop the actor to prevent event loop leak
-        this.timeouts.delete(timeoutId);
       } else if (state.matches('cancelled')) {
         // Just cleanup
         timeoutActor.stop(); // ✅ CRITICAL FIX: Stop the actor to prevent event loop leak
@@ -419,6 +419,8 @@ export class PureXStateCorrelationManager {
   handleTimeout(correlationId: string): void {
     const pendingRequest = this.pendingRequests.get(correlationId);
     if (!pendingRequest) return;
+
+    this.timeoutManager.clearTimeout(pendingRequest.timeoutId);
 
     // Remove from pending requests
     this.pendingRequests.delete(correlationId);

@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1300" viewBox="0 0 1200 1300" role="img" aria-labelledby="title desc">
+  <title id="title">Parallel SDLC teams: models and methods in the running example</title>
+  <desc id="desc">Each task gets a team with five pinned role definitions. Checkout uses reviewer revision one, which sees the candidate and check; profile uses revision two, which sees only the check. The teams run concurrently on one in-memory node. Within each team, fresh actor sessions plan, build, test, review and document in sequence. The team stops each session and evaluates its result. A failed or mismatched check stops the run before Review; a mismatched or unapproved review stops it before Document. Accepted facts become a team report. Progress notifications never approve results. The default review advisor is a script; no language model or VM is involved.</desc>
+  <defs>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; fill: #15263d; }
+      .title { font-size: 34px; font-weight: 700; }
+      .heading { font-size: 20px; font-weight: 700; }
+      .body { font-size: 16px; }
+      .small { font-size: 14px; fill: #42566c; }
+      .kicker { font-size: 13px; font-weight: 700; letter-spacing: 1.3px; }
+      .code, .sig { font-family: Menlo, Consolas, monospace; fill: #134a74; }
+      .code { font-size: 15px; }
+      .sig { font-size: 17px; font-weight: 700; }
+      .blue { fill: #185385; }
+      .green { fill: #126453; }
+      .red { fill: #933f37; }
+      .card { fill: #fff; stroke: #acbac7; }
+      .actor { fill: #edf5fc; stroke: #90b4d4; }
+      .gate { fill: #eaf6f1; stroke: #86b8a6; }
+      .edge { fill: none; stroke: #455d73; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#455d73"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="1300" fill="#f7f9fb"/>
+  <g transform="translate(40,37)">
+    <text class="kicker blue">PARALLEL SDLC TEAMS  /  DEFAULT IN-PROCESS DEMO</text>
+    <text y="45" class="title">From a pinned role to an accepted fact</text>
+    <text y="76" class="body">A role definition is versioned data, not a language model. Both teams run on one in-memory node, with no LLM or VM.</text>
+  </g>
+
+  <g transform="translate(40,157)">
+    <text class="kicker">01  /  ALLOCATION</text>
+    <rect y="17" width="356" height="132" rx="10" class="card"/>
+    <text x="16" y="46" class="heading">Publish role definitions</text>
+    <text x="16" y="73" class="code">DefinitionRegistry</text>
+    <text x="16" y="98" class="body">Each Definition has an id, role, instruction</text>
+    <text x="16" y="119" class="body">and evidenceGrants. A Roster selects one</text>
+    <text x="16" y="140" class="body">Version { id, revision } for each role.</text>
+    <path class="edge" d="M357 82 H379"/>
+    <rect x="382" y="17" width="338" height="132" rx="10" class="card"/>
+    <text x="398" y="46" class="heading">Pin the task and roster</text>
+    <text x="398" y="73" class="code">registry.pin(task, roster)</text>
+    <text x="398" y="98" class="body">Assignment = cloned Task + five</text>
+    <text x="398" y="119" class="body">PinnedDefinitions. Invalid task, roster</text>
+    <text x="398" y="140" class="body">or unavailable role? Refuse; no team.</text>
+    <path class="edge" d="M721 82 H743"/>
+    <rect x="746" y="17" width="374" height="132" rx="10" class="actor"/>
+    <text x="762" y="46" class="heading">Allocate an idle team</text>
+    <text x="762" y="73" class="code">allocateTeam() → ALLOCATE_TEAM</text>
+    <text x="762" y="98" class="body">The orchestrator pins, rejects duplicate task</text>
+    <text x="762" y="119" class="body">IDs, then spawns. AllocatedTeam carries</text>
+    <text x="762" y="140" class="body">the address and the pinned assignment.</text>
+  </g>
+
+  <g transform="translate(40,325)">
+    <rect width="1120" height="98" rx="10" class="card"/>
+    <path d="M560 13 V63" stroke="#c4d0db"/>
+    <text x="16" y="28" class="heading">checkout@3  ·  “Pay now”</text>
+    <text x="16" y="55" class="body">reviewer@1 → review evidence: check + candidate</text>
+    <text x="579" y="28" class="heading">profile@1  ·  “Save profile”</text>
+    <text x="579" y="55" class="body">reviewer@2 → review evidence: check only</text>
+    <text x="16" y="83" class="small">Both rosters are pinned before retire('reviewer'). Retirement blocks future pins; it does not change either allocated team.</text>
+  </g>
+
+  <g transform="translate(40,460)">
+    <text class="kicker">02  /  EXECUTION</text>
+    <rect y="15" width="1120" height="77" rx="10" class="actor"/>
+    <text x="16" y="44" class="heading">Two concurrent teams; one ordered sequence per team</text>
+    <text x="16" y="71" class="body">runTeam() consumes a ready address once. At each step(), the team spawns a specialist, asks RUN_STAGE, then stops it before acceptance.</text>
+  </g>
+
+  <g transform="translate(40,582)">
+    <text class="kicker blue">SPECIALIST SESSION  /  WORK AND OUTPUT</text>
+    <text x="648" class="kicker green">TEAM ACTOR  /  WHAT ALLOWS THE NEXT STEP?</text>
+
+    <g transform="translate(0,15)">
+      <rect width="600" height="65" rx="9" class="card"/>
+      <text x="16" y="26" class="kicker">1  PLAN</text>
+      <text x="120" y="26" class="sig">planLabel(task) → Plan</text>
+      <text x="120" y="50" class="body">Copies the task id, revision and expected label into the plan.</text>
+      <path class="edge" d="M300 66 V80"/>
+    </g>
+    <g transform="translate(0,98)">
+      <rect width="600" height="74" rx="9" class="card"/>
+      <text x="16" y="28" class="kicker">2  BUILD</text>
+      <text x="120" y="28" class="sig">buildLabel(plan, id, injectWrongCandidate)</text>
+      <text x="120" y="55" class="body">Returns a Candidate. The failure fixture changes its label.</text>
+      <path class="edge" d="M300 75 V89"/>
+    </g>
+    <g transform="translate(648,15)">
+      <rect width="472" height="157" rx="9" class="card"/>
+      <text x="16" y="28" class="heading">Plan, Build and Document</text>
+      <text x="16" y="55" class="body">For these steps the team accepts a successful return</text>
+      <text x="16" y="77" class="body">with ok(). Test and Review have extra checks below.</text>
+      <text x="16" y="111" class="kicker blue">IDENTITY USED BY BOTH CHECKS  /  CandidateBinding</text>
+      <text x="16" y="138" class="code">taskId + taskRevision + candidateId</text>
+    </g>
+
+    <g transform="translate(0,190)">
+      <rect width="600" height="94" rx="9" class="card"/>
+      <text x="16" y="29" class="kicker">3  TEST</text>
+      <text x="120" y="29" class="sig">checkLabel(candidate, expectedLabel)</text>
+      <text x="120" y="56" class="body">Returns a Check with the candidate binding and passed:</text>
+      <text x="120" y="79" class="body">does the candidate label equal the task’s expected label?</text>
+      <path class="edge" d="M601 46 H645"/>
+      <rect x="648" width="472" height="94" rx="9" class="gate"/>
+      <text x="664" y="28" class="sig">acceptCheck(candidate, check)</text>
+      <text x="664" y="54" class="body">Same binding and passed = true → dispatch Review.</text>
+      <text x="664" y="79" class="body red">Otherwise stop. No reviewer session is spawned.</text>
+      <path class="edge" d="M841 95 V102 H300 V110"/>
+    </g>
+
+    <g transform="translate(0,302)">
+      <rect width="600" height="119" rx="9" class="card"/>
+      <text x="16" y="29" class="kicker">4  REVIEW</text>
+      <text x="120" y="29" class="sig">ReviewAdvisor: (ReviewRequest) → unknown</text>
+      <text x="120" y="56" class="body">Input: pinned definition, task request, check and, if granted,</text>
+      <text x="120" y="79" class="body">candidate. scriptedReview() copies the check’s binding</text>
+      <text x="120" y="102" class="body">and uses check.passed to choose approve or reject.</text>
+      <path class="edge" d="M601 57 H645"/>
+      <rect x="648" width="472" height="119" rx="9" class="gate"/>
+      <text x="664" y="29" class="sig">acceptReview(candidate, receipt)</text>
+      <text x="664" y="56" class="body">Same binding and explicit “approve” → create the</text>
+      <text x="664" y="79" class="body">accepted Review. Advice alone does not advance the team.</text>
+      <text x="664" y="102" class="body red">Otherwise stop. No Document is produced.</text>
+      <path class="edge" d="M841 120 V127 H300 V135"/>
+    </g>
+
+    <g transform="translate(0,439)">
+      <rect width="600" height="75" rx="9" class="card"/>
+      <text x="16" y="28" class="kicker">5  DOCUMENT</text>
+      <text x="136" y="28" class="sig">documentLabel(candidate, review)</text>
+      <text x="136" y="55" class="body">Returns a Document with the binding and a change summary.</text>
+      <path class="edge" d="M601 38 H645"/>
+      <rect x="648" width="472" height="75" rx="9" class="actor"/>
+      <text x="664" y="28" class="sig">Result&lt;TeamReport&gt;</text>
+      <text x="664" y="55" class="body">Success: task revision + five ordered records. Team stops.</text>
+    </g>
+  </g>
+
+  <g transform="translate(40,1139)">
+    <text class="kicker">03  /  WHAT GETS RECORDED?</text>
+    <rect y="16" width="548" height="85" rx="9" class="card"/>
+    <text x="16" y="44" class="heading">StageRecord · accepted evidence</text>
+    <text x="16" y="69" class="body">StageSession (role, definition version, sessionAddress) + StageFact.</text>
+    <text x="16" y="90" class="small">Fact types: Plan | Candidate | Check | Review | Document.</text>
+    <rect x="566" y="16" width="554" height="85" rx="9" class="card"/>
+    <text x="582" y="44" class="heading">StageProgress · observation only</text>
+    <text x="582" y="69" class="body">The observer receives a copy: running, completed or refused.</text>
+    <text x="582" y="90" class="small">It cannot accept a fact or unblock a refused stage.</text>
+    <text y="133" class="small">Source: examples/parallel-sdlc-teams/  ·  definitions.ts  /  scenario.ts  /  teams.ts  /  stages.ts</text>
+  </g>
+</svg>

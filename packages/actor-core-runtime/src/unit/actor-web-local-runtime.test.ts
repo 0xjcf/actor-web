@@ -1,25 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { ActorMessage, MessageTransport } from '../actor-system.js';
 import {
-  type ActorWebLocalRuntimeSourceOptions,
-  type StartedActorWebLocalRuntime,
+  type LocalRuntimeSourceOptions,
+  type StartedLocalRuntime,
   startRuntime,
 } from '../actor-web-client.js';
-import type {
-  ClosableActorWebReadModelSource,
-  ClosableActorWebSource,
-} from '../actor-web-source.js';
+import type { ClosableReadModelSource, ClosableSource } from '../actor-web-source.js';
 import {
   createInMemoryMessageTransportNetwork,
   type InMemoryMessageTransportNetwork,
   type InMemoryTransportFrame,
 } from '../testing/in-memory-message-transport.js';
-import type {
-  ActorWebActorContext,
-  ActorWebActorEvent,
-  ActorWebActorMessage,
-} from '../topology.js';
-import { actor, defineActorWebTopology, node } from '../topology.js';
+import type { ActorContextOf, ActorEventOf, ActorMessageOf } from '../topology.js';
+import { actor, defineTopology, node } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 type ShipmentCommand =
@@ -99,7 +92,7 @@ class JoinFailureNetwork implements InMemoryMessageTransportNetwork {
 }
 
 function createLogisticsTopology() {
-  return defineActorWebTopology({
+  return defineTopology({
     nodes: {
       dashboard: node('logistics-dashboard-runtime'),
       worker: node('logistics-worker-runtime'),
@@ -221,32 +214,26 @@ describe('startRuntime', () => {
 
   it('supports AbortSignal cleanup and preserves actor source inference', async () => {
     const logistics = createLogisticsTopology();
-    const runtime: StartedActorWebLocalRuntime<typeof logistics> = await startRuntime(logistics);
+    const runtime: StartedLocalRuntime<typeof logistics> = await startRuntime(logistics);
     const controller = new AbortController();
-    const options: ActorWebLocalRuntimeSourceOptions = { signal: controller.signal };
+    const options: LocalRuntimeSourceOptions = { signal: controller.signal };
 
-    type DashboardContext = ActorWebActorContext<typeof logistics.actors.dashboard>;
-    type DashboardCommand = ActorWebActorMessage<typeof logistics.actors.dashboard>;
-    type DashboardEvent = ActorWebActorEvent<typeof logistics.actors.dashboard>;
+    type DashboardContext = ActorContextOf<typeof logistics.actors.dashboard>;
+    type DashboardCommand = ActorMessageOf<typeof logistics.actors.dashboard>;
+    type DashboardEvent = ActorEventOf<typeof logistics.actors.dashboard>;
 
-    const readModel: ClosableActorWebReadModelSource<DashboardContext, DashboardEvent> =
+    const readModel: ClosableReadModelSource<DashboardContext, DashboardEvent> =
       runtime.dashboard.readModel(options);
-    const commandSource: ClosableActorWebSource<
-      DashboardContext,
-      DashboardCommand,
-      DashboardEvent
-    > = runtime.dashboard.commands();
+    const commandSource: ClosableSource<DashboardContext, DashboardCommand, DashboardEvent> =
+      runtime.dashboard.commands();
     const session = runtime.dashboard.session(options);
     const command: DashboardCommand = { type: 'CREATE_SHIPMENT', shipmentId: 'typed' };
     const snapshots: DashboardContext[] = [];
 
-    const sessionReadModel: ClosableActorWebReadModelSource<DashboardContext, DashboardEvent> =
+    const sessionReadModel: ClosableReadModelSource<DashboardContext, DashboardEvent> =
       session.readModel;
-    const sessionCommands: ClosableActorWebSource<
-      DashboardContext,
-      DashboardCommand,
-      DashboardEvent
-    > = session.commands;
+    const sessionCommands: ClosableSource<DashboardContext, DashboardCommand, DashboardEvent> =
+      session.commands;
 
     readModel.subscribe((snapshot) => {
       snapshots.push(snapshot.context);

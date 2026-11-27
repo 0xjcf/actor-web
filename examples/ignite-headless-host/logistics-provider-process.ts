@@ -5,7 +5,7 @@ import {
   createRuntimeTransportTelemetryJsonlFileSink,
   createStaticRuntimePeerDiscoveryProvider,
   type RuntimeTransportTelemetryExporter,
-  type ServedActorWebNode,
+  type ServedNode,
   serveNode,
 } from '@actor-web/runtime/node';
 import { logistics } from './logistics-topology';
@@ -37,7 +37,7 @@ function resolveServerTransportUrl(): string {
   throw new Error('ACTOR_WEB_SERVER_TRANSPORT_URL is required for logistics provider runtime.');
 }
 
-async function stopProvider(provider: ServedActorWebNode<typeof logistics>): Promise<void> {
+async function stopProvider(provider: ServedNode<typeof logistics>): Promise<void> {
   await provider.stop();
 }
 

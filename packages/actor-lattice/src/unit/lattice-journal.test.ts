@@ -1,5 +1,5 @@
 import { startRuntime } from '@actor-web/runtime';
-import { defineActorWebTopology, node } from '@actor-web/runtime/topology';
+import { defineTopology, node } from '@actor-web/runtime/topology';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createEventStoreLatticeJournal,
@@ -212,7 +212,7 @@ describe('lattice journal seam', () => {
   it('hydrates a topology-created lattice actor from its journal before handling messages', async () => {
     const journal = createEventStoreLatticeJournal();
     await journal.append('workflow-lattice', [{ kind: 'ARTIFACT_PUBLISHED', artifact }], 0);
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: { local: node('local') },
       actors: {
         workspace: lattice({ id: 'workflow-lattice', node: 'local', journal }),
@@ -248,7 +248,7 @@ describe('lattice journal seam', () => {
         return (await replay()) as never;
       }),
     };
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: { local: node('local') },
       actors: {
         workspace: lattice({ id: 'workflow-lattice', node: 'local', journal }),

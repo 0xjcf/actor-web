@@ -1,0 +1,236 @@
+{
+  "live": {
+    "archive": "20261125T190330Z-selection-live.json.gz",
+    "sha256": "014aeda0f08704faaedd6d148fcb07073b2d2001a26fadb0e287d78a0ef30d05",
+    "model": {
+      "provider": "openai",
+      "model": "gpt-4.1-mini",
+      "settings": {
+        "status": "captured",
+        "value": {
+          "temperature": 0,
+          "max_completion_tokens": 900,
+          "parallelToolCalls": false
+        }
+      }
+    },
+    "bounds": {
+      "maxCalls": 48,
+      "maxReadsPerAssignment": 3,
+      "retries": 0
+    },
+    "arms": {
+      "standard": {
+        "attempts": 6,
+        "covered": 3,
+        "cueThenProbe": 3,
+        "accepted": 3,
+        "exact": 1,
+        "reads": 18,
+        "calls": 24,
+        "inputTokens": 35869,
+        "outputTokens": 2365
+      },
+      "budget-plan": {
+        "attempts": 6,
+        "covered": 3,
+        "cueThenProbe": 3,
+        "accepted": 3,
+        "exact": 2,
+        "reads": 18,
+        "calls": 24,
+        "inputTokens": 38388,
+        "outputTokens": 3138
+      }
+    },
+    "cases": {
+      "alert-wet": {
+        "standard": {
+          "attempts": 2,
+          "covered": 1,
+          "cueThenProbe": 1,
+          "accepted": 1,
+          "exact": 1,
+          "reads": 6,
+          "calls": 8,
+          "inputTokens": 11957,
+          "outputTokens": 744
+        },
+        "budget-plan": {
+          "attempts": 2,
+          "covered": 2,
+          "cueThenProbe": 2,
+          "accepted": 2,
+          "exact": 2,
+          "reads": 6,
+          "calls": 8,
+          "inputTokens": 12649,
+          "outputTokens": 895
+        }
+      },
+      "volume-offer": {
+        "standard": {
+          "attempts": 2,
+          "covered": 0,
+          "cueThenProbe": 0,
+          "accepted": 0,
+          "exact": 0,
+          "reads": 6,
+          "calls": 8,
+          "inputTokens": 11900,
+          "outputTokens": 849
+        },
+        "budget-plan": {
+          "attempts": 2,
+          "covered": 0,
+          "cueThenProbe": 0,
+          "accepted": 0,
+          "exact": 0,
+          "reads": 6,
+          "calls": 8,
+          "inputTokens": 12505,
+          "outputTokens": 894
+        }
+      },
+      "alert-normal": {
+        "standard": {
+          "attempts": 2,
+          "covered": 2,
+          "cueThenProbe": 2,
+          "accepted": 2,
+          "exact": 0,
+          "reads": 6,
+          "calls": 8,
+          "inputTokens": 12012,
+          "outputTokens": 772
+        },
+        "budget-plan": {
+          "attempts": 2,
+          "covered": 1,
+          "cueThenProbe": 1,
+          "accepted": 1,
+          "exact": 0,
+          "reads": 6,
+          "calls": 8,
+          "inputTokens": 13234,
+          "outputTokens": 1349
+        }
+      }
+    }
+  },
+  "scripted": {
+    "archive": "20261125T190315Z-selection-scripted.json.gz",
+    "sha256": "ebb943cbdbe829516116fea871fc9b649f65e9331ff111ce612ad7fa521e5fbd",
+    "model": {
+      "provider": "scripted",
+      "model": "observation-driven-rules",
+      "settings": {
+        "status": "captured",
+        "value": {}
+      }
+    },
+    "bounds": {
+      "maxCalls": 48,
+      "maxReadsPerAssignment": 3,
+      "retries": 0
+    },
+    "arms": {
+      "standard": {
+        "attempts": 6,
+        "covered": 0,
+        "cueThenProbe": 0,
+        "accepted": 6,
+        "exact": 0,
+        "reads": 16,
+        "calls": 22,
+        "inputTokens": null,
+        "outputTokens": null
+      },
+      "budget-plan": {
+        "attempts": 6,
+        "covered": 0,
+        "cueThenProbe": 0,
+        "accepted": 6,
+        "exact": 0,
+        "reads": 16,
+        "calls": 22,
+        "inputTokens": null,
+        "outputTokens": null
+      }
+    },
+    "cases": {
+      "alert-wet": {
+        "standard": {
+          "attempts": 2,
+          "covered": 0,
+          "cueThenProbe": 0,
+          "accepted": 2,
+          "exact": 0,
+          "reads": 6,
+          "calls": 8,
+          "inputTokens": null,
+          "outputTokens": null
+        },
+        "budget-plan": {
+          "attempts": 2,
+          "covered": 0,
+          "cueThenProbe": 0,
+          "accepted": 2,
+          "exact": 0,
+          "reads": 6,
+          "calls": 8,
+          "inputTokens": null,
+          "outputTokens": null
+        }
+      },
+      "volume-offer": {
+        "standard": {
+          "attempts": 2,
+          "covered": 0,
+          "cueThenProbe": 0,
+          "accepted": 2,
+          "exact": 0,
+          "reads": 4,
+          "calls": 6,
+          "inputTokens": null,
+          "outputTokens": null
+        },
+        "budget-plan": {
+          "attempts": 2,
+          "covered": 0,
+          "cueThenProbe": 0,
+          "accepted": 2,
+          "exact": 0,
+          "reads": 4,
+          "calls": 6,
+          "inputTokens": null,
+          "outputTokens": null
+        }
+      },
+      "alert-normal": {
+        "standard": {
+          "attempts": 2,
+          "covered": 0,
+          "cueThenProbe": 0,
+          "accepted": 2,
+          "exact": 0,
+          "reads": 6,
+          "calls": 8,
+          "inputTokens": null,
+          "outputTokens": null
+        },
+        "budget-plan": {
+          "attempts": 2,
+          "covered": 0,
+          "cueThenProbe": 0,
+          "accepted": 2,
+          "exact": 0,
+          "reads": 6,
+          "calls": 8,
+          "inputTokens": null,
+          "outputTokens": null
+        }
+      }
+    }
+  }
+}

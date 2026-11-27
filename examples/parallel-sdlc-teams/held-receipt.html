@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Held receipt · Parallel SDLC Teams</title>
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="./dashboard.css" />
+  </head>
+  <body>
+    <main class="example-shell">
+      <a class="back-link" href="./">← Default team demo</a>
+      <header class="example-header">
+        <p class="example-kicker">Sprint 1 · In-memory executors</p>
+        <h1>One receipt held, two independent teams</h1>
+        <p class="example-copy">Both hosts check their own candidate once. Checkout’s host keeps its receipt while Profile finishes. Neither host is a VM.</p>
+      </header>
+      <section class="panel demo-controls" aria-label="Fixture controls">
+        <div class="toolbar">
+          <button id="start" type="button">Start a fresh run</button>
+          <button id="deliver" type="button" disabled>Look up and deliver Checkout’s receipt</button>
+          <label class="failure-option"><input id="wrong" type="checkbox" /> Wrong Checkout label</label>
+        </div>
+        <p id="status" role="status">Start a run to open the read-only dashboard after Checkout times out.</p>
+      </section>
+      <section class="teams-grid" id="receipt-lanes" aria-label="Read-only attempt snapshots"></section>
+    </main>
+    <script type="module" src="./receipt-dashboard.ts"></script>
+  </body>
+</html>

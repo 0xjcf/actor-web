@@ -1,4 +1,12 @@
 export type {
+  ActorAddress,
+  ActorContextOf,
+  ActorDefinition,
+  ActorDescriptor,
+  ActorEventOf,
+  ActorMessageOf,
+  ActorSupervisionPolicy,
+  ActorSupervisionStrategy,
   ActorWebActorAddress,
   ActorWebActorContext,
   ActorWebActorDefinition,
@@ -17,5 +25,22 @@ export type {
   ActorWebTopology,
   ActorWebTopologyInput,
   ActorWebTypedDefineActor,
+  AllowedToolRegistry,
+  NodeDefinition,
+  SupervisorDefinition,
+  SupervisorDescriptor,
+  ToolCatalogInput,
+  ToolDefinition,
+  ToolReference,
+  Topology,
+  TopologyInput,
+  TypedDefineActor,
 } from './topology.js';
-export { actor, defineActorWebTopology, node, supervisor, tool } from './topology.js';
+export {
+  actor,
+  defineActorWebTopology,
+  defineTopology,
+  node,
+  supervisor,
+  tool,
+} from './topology.js';

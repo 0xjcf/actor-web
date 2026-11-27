@@ -29,6 +29,61 @@ afterEach(() => {
 });
 
 describe('reentrant test delivery', () => {
+  it.each([false, true])(
+    'restores the parent context after a dependency ask (test mode: %s)',
+    async (testMode) => {
+      if (typeof process.getBuiltinModule === 'function') {
+        vi.spyOn(process, 'getBuiltinModule').mockReturnValue(undefined);
+      }
+      vi.resetModules();
+      const [{ ActorSystemImpl }, { defineBehavior }, contexts] = await Promise.all([
+        import('../actor-system-impl.js'),
+        import('../unified-actor-builder.js'),
+        import('../actor-context-manager.js'),
+      ]);
+      expect(contexts.supportsOverlappingTopLevelAsyncRuns()).toBe(false);
+      const system = new ActorSystemImpl({ nodeAddress: 'test-node' });
+      if (testMode) system.enableTestMode();
+      await system.start();
+      try {
+        const child = await system.spawn(
+          defineBehavior<ActorMessage>().onMessage(async () => {
+            await Promise.resolve();
+            return { reply: { actor: contexts.getCurrentActorId() } };
+          }),
+          { id: 'child' }
+        );
+        const parent = await system.spawn(
+          defineBehavior<ActorMessage>().onMessage(async ({ dependencies }) => {
+            const before = contexts.getCurrentContext();
+            await Promise.resolve();
+            const reply = await dependencies.ask<{ actor: string }>(
+              testMode ? child.address : child,
+              { type: 'READ' },
+              TEST_OPERATION_DEADLINE_MS
+            );
+            return {
+              reply: {
+                child: reply.actor,
+                parent: contexts.getCurrentActorId(),
+                restored: contexts.getCurrentContext() === before,
+              },
+            };
+          }),
+          { id: 'parent' }
+        );
+        await expect(parent.ask({ type: 'START' })).resolves.toEqual({
+          child: child.address,
+          parent: parent.address,
+          restored: true,
+        });
+      } finally {
+        system.disableTestMode();
+        await system.stop();
+      }
+    }
+  );
+
   it('completes when actor A awaits a dependency send to actor B with fallback storage', async () => {
     if (typeof process.getBuiltinModule === 'function') {
       vi.spyOn(process, 'getBuiltinModule').mockReturnValue(undefined);

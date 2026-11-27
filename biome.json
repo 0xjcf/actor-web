@@ -63,20 +63,18 @@
       "!**/.vitepress/cache/**",
       "!**/.mcp.json",
       "!**/.cursor/**",
-      "!**/.fas/agents/**",
-      "!**/.fas/index/**",
-      "!**/.fas/prompts/**",
-      "!**/.fas/queue/**",
-      "!**/.fas/scripts/**",
-      "!**/.fas/semantic/**",
-      "!**/.fas/memory/candidates/**",
-      "!**/.fas/memory/entries/**",
-      "!**/.fas/state/**",
+      "!**/.fas/**",
       "!**/*.d.ts.map",
       "!**/*.js.map"
     ]
   },
   "overrides": [
+    {
+      "includes": ["examples/retail-investigation/evals/*-live.json"],
+      "formatter": {
+        "enabled": false
+      }
+    },
     {
       "includes": ["packages/actor-core-runtime/src/**/*.ts"],
       "linter": {

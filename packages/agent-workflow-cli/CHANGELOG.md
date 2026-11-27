@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+### Patch Changes
+
+- Update the packaged dependencies to `@actor-web/agent@0.3.0` and `@actor-web/runtime@0.4.0`. The host uses the canonical runtime API names internally; CLI commands are unchanged.
+
 ## 0.1.1
 
 ### Patch Changes

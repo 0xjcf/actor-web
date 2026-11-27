@@ -4,32 +4,32 @@ import type { SupervisorGroupConfig } from './actor-system-impl.js';
 import type { ActorToolRegistry } from './actor-tools.js';
 import { Logger } from './logger.js';
 import type {
-  ActorWebActorContext,
-  ActorWebActorDescriptor,
-  ActorWebActorInstanceParams,
-  ActorWebActorMessage,
-  ActorWebNodeDefinition,
-  ActorWebTopology,
-  ActorWebTopologyInput,
+  ActorContextOf,
+  ActorDescriptor,
+  ActorInstanceParams,
+  ActorMessageOf,
+  NodeDefinition,
+  Topology,
+  TopologyInput,
 } from './topology.js';
 import { parse } from './utils/factories.js';
 
 const log = Logger.namespace('ACTOR_WEB_NODE_RUNTIME');
 
-export type ActorWebNodeActorMap<_TTopology extends ActorWebTopology<ActorWebTopologyInput>> = Map<
+export type ActorWebNodeActorMap<_TTopology extends Topology<TopologyInput>> = Map<
   string,
   ActorRef<unknown, ActorMessage>
 >;
 
-export type ActorWebNodeActorHandle<TActor> = ActorWebActorInstanceParams<TActor> extends never
+export type NodeActorHandle<TActor> = ActorInstanceParams<TActor> extends never
   ? {
-      get(): ActorRef<ActorWebActorContext<TActor>, ActorWebActorMessage<TActor>> | undefined;
-      require(): ActorRef<ActorWebActorContext<TActor>, ActorWebActorMessage<TActor>>;
+      get(): ActorRef<ActorContextOf<TActor>, ActorMessageOf<TActor>> | undefined;
+      require(): ActorRef<ActorContextOf<TActor>, ActorMessageOf<TActor>>;
     }
   : {
       instance(
-        params: ActorWebActorInstanceParams<TActor>
-      ): Promise<ActorRef<ActorWebActorContext<TActor>, ActorWebActorMessage<TActor>>>;
+        params: ActorInstanceParams<TActor>
+      ): Promise<ActorRef<ActorContextOf<TActor>, ActorMessageOf<TActor>>>;
     };
 
 /**
@@ -38,13 +38,14 @@ export type ActorWebNodeActorHandle<TActor> = ActorWebActorInstanceParams<TActor
  * should use startRuntime(...) from actor-web-client instead of
  * adapting these handles by hand.
  */
-export type ActorWebNodeActorHandles<TTopology extends ActorWebTopology<ActorWebTopologyInput>> = {
-  readonly [K in keyof TTopology['actors']]: ActorWebNodeActorHandle<TTopology['actors'][K]>;
+export type NodeActorHandles<TTopology extends Topology<TopologyInput>> = {
+  readonly [K in keyof TTopology['actors']]: NodeActorHandle<TTopology['actors'][K]>;
 };
 
-export function getActorWebNodeDefinition<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
->(topology: TTopology, nodeKey: keyof TTopology['nodes'] & string): ActorWebNodeDefinition {
+export function getActorWebNodeDefinition<TTopology extends Topology<TopologyInput>>(
+  topology: TTopology,
+  nodeKey: keyof TTopology['nodes'] & string
+): NodeDefinition {
   const nodeDefinition = topology.nodes[nodeKey];
   if (!nodeDefinition) {
     throw new Error(`Unknown Actor-Web node "${nodeKey}".`);
@@ -53,17 +54,17 @@ export function getActorWebNodeDefinition<
   return nodeDefinition;
 }
 
-export function getOwnedActorWebActors<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+export function getOwnedActorWebActors<TTopology extends Topology<TopologyInput>>(
   topology: TTopology,
   nodeKey: keyof TTopology['nodes'] & string
-): Array<[keyof TTopology['actors'] & string, ActorWebActorDescriptor]> {
+): Array<[keyof TTopology['actors'] & string, ActorDescriptor]> {
   return Object.entries(topology.actors).filter(([, actorDescriptor]) => {
     return actorDescriptor.node === nodeKey;
-  }) as Array<[keyof TTopology['actors'] & string, ActorWebActorDescriptor]>;
+  }) as Array<[keyof TTopology['actors'] & string, ActorDescriptor]>;
 }
 
 export function materializeActorWebBehavior(
-  actorDescriptor: ActorWebActorDescriptor,
+  actorDescriptor: ActorDescriptor,
   params?: unknown
 ): ActorBehavior<ActorMessage, ActorMessage> {
   const behavior = actorDescriptor.behavior;
@@ -94,14 +95,14 @@ export function materializeActorWebBehavior(
   return built as ActorBehavior<ActorMessage, ActorMessage>;
 }
 
-export function getActorWebRequiredToolNames(actorDescriptor: ActorWebActorDescriptor): string[] {
+export function getActorWebRequiredToolNames(actorDescriptor: ActorDescriptor): string[] {
   return (actorDescriptor.tools ?? []).map((toolReference) =>
     typeof toolReference === 'string' ? toolReference : toolReference.name
   );
 }
 
 export function validateActorWebRequiredTools(
-  actorDescriptor: ActorWebActorDescriptor,
+  actorDescriptor: ActorDescriptor,
   tools: ActorToolRegistry | undefined
 ): void {
   const missingTools = getActorWebRequiredToolNames(actorDescriptor).filter(
@@ -114,9 +115,10 @@ export function validateActorWebRequiredTools(
   }
 }
 
-export function createActorWebNodeToolAccess<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
->(topology: TTopology, nodeKey: keyof TTopology['nodes'] & string): Record<string, string[]> {
+export function createActorWebNodeToolAccess<TTopology extends Topology<TopologyInput>>(
+  topology: TTopology,
+  nodeKey: keyof TTopology['nodes'] & string
+): Record<string, string[]> {
   return Object.fromEntries(
     getOwnedActorWebActors(topology, nodeKey).map(([, actorDescriptor]) => [
       actorDescriptor.address,
@@ -125,14 +127,14 @@ export function createActorWebNodeToolAccess<
   );
 }
 
-export function isParameterizedActorWebActor(actorDescriptor: ActorWebActorDescriptor): boolean {
+export function isParameterizedActorWebActor(actorDescriptor: ActorDescriptor): boolean {
   return typeof actorDescriptor.id === 'function';
 }
 
 async function spawnActorWebActorInstance(
   system: ActorSystem,
   actorKey: string,
-  actorDescriptor: ActorWebActorDescriptor,
+  actorDescriptor: ActorDescriptor,
   actors: Map<string, ActorRef<unknown, ActorMessage>>,
   inFlightActors: Map<string, Promise<ActorRef<unknown, ActorMessage>>>,
   toolAccess: Record<string, string[]>,
@@ -186,16 +188,14 @@ async function spawnActorWebActorInstance(
   }
 }
 
-export function createActorWebNodeActorHandles<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
->(
+export function createActorWebNodeActorHandles<TTopology extends Topology<TopologyInput>>(
   system: ActorSystem,
   topology: TTopology,
   nodeKey: keyof TTopology['nodes'] & string,
   actors: ActorWebNodeActorMap<TTopology>,
   toolAccess: Record<string, string[]>,
   tools?: ActorToolRegistry
-): ActorWebNodeActorHandles<TTopology> {
+): NodeActorHandles<TTopology> {
   const inFlightActors = new Map<string, Promise<ActorRef<unknown, ActorMessage>>>();
   return Object.fromEntries(
     Object.entries(topology.actors).map(([actorKey, actorDescriptor]) => {
@@ -235,12 +235,10 @@ export function createActorWebNodeActorHandles<
         },
       ];
     })
-  ) as unknown as ActorWebNodeActorHandles<TTopology>;
+  ) as unknown as NodeActorHandles<TTopology>;
 }
 
-export async function spawnOwnedActorWebActors<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
->(
+export async function spawnOwnedActorWebActors<TTopology extends Topology<TopologyInput>>(
   system: ActorSystem,
   topology: TTopology,
   nodeKey: keyof TTopology['nodes'] & string,
@@ -263,13 +261,11 @@ export async function spawnOwnedActorWebActors<
 
 export type ActorWebSubscriptionTeardown = () => Promise<void> | void;
 
-function requireSubscriptionActorDescriptor<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
->(
+function requireSubscriptionActorDescriptor<TTopology extends Topology<TopologyInput>>(
   topology: TTopology,
   actorKey: string,
   role: 'publisher' | 'subscriber'
-): ActorWebActorDescriptor {
+): ActorDescriptor {
   const actorDescriptor = topology.actors[actorKey];
   if (!actorDescriptor) {
     throw new Error(
@@ -300,9 +296,7 @@ function requireSubscriptionActorDescriptor<
  * Returns teardown functions the host must run on stop (and on failed start)
  * so start/stop wiring stays paired.
  */
-export async function wireOwnedActorWebSubscriptions<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
->(
+export async function wireOwnedActorWebSubscriptions<TTopology extends Topology<TopologyInput>>(
   system: ActorSystem,
   topology: TTopology,
   nodeKey: keyof TTopology['nodes'] & string,
@@ -379,9 +373,10 @@ export async function wireOwnedActorWebSubscriptions<
  * per-actor policy), and rejected in widening/escalate groups because a
  * statically unknowable member silently changes the blast radius.
  */
-export function resolveOwnedActorWebSupervisorGroups<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
->(topology: TTopology, nodeKey: keyof TTopology['nodes'] & string): SupervisorGroupConfig[] {
+export function resolveOwnedActorWebSupervisorGroups<TTopology extends Topology<TopologyInput>>(
+  topology: TTopology,
+  nodeKey: keyof TTopology['nodes'] & string
+): SupervisorGroupConfig[] {
   const groups: SupervisorGroupConfig[] = [];
 
   for (const [supervisorKey, descriptor] of Object.entries(topology.supervisors ?? {})) {

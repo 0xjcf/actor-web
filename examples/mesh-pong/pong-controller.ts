@@ -1,10 +1,10 @@
 import {
-  ACTOR_WEB_LLM_TOOL_NAME,
   type ActorAgentLlmProvider,
   type ActorAgentLlmRequest,
   type ActorAgentLlmResult,
   type ActorAgentToolRegistry,
   createActorAgentTools,
+  LLM_TOOL_NAME,
 } from '@actor-web/agent';
 import type { ActorToolRegistry } from '@actor-web/runtime/browser';
 import { ActorToolTimeoutError, defineBehavior } from '@actor-web/runtime/browser';
@@ -248,13 +248,9 @@ export function createPongControllerBehavior(side: PongSide) {
         side,
         message.snapshot,
         (request, _context) =>
-          tools.execute<ActorAgentLlmResult, ActorAgentLlmRequest>(
-            ACTOR_WEB_LLM_TOOL_NAME,
-            request,
-            {
-              timeoutMs: CONTROLLER_LLM_TIMEOUT_MS,
-            }
-          ),
+          tools.execute<ActorAgentLlmResult, ActorAgentLlmRequest>(LLM_TOOL_NAME, request, {
+            timeoutMs: CONTROLLER_LLM_TIMEOUT_MS,
+          }),
         CONTROLLER_LLM_TIMEOUT_MS + 1
       );
 

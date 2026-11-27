@@ -1,0 +1,1509 @@
+import type { JsonValue } from '@actor-web/runtime';
+import {
+  type ActorToolExecutionContext,
+  type ActorToolExecutor,
+  type AgentExecutionTrace,
+  createActorToolbox,
+  startRuntime,
+} from '@actor-web/runtime/browser';
+import { actor, defineTopology, node, tool } from '@actor-web/runtime/topology';
+import {
+  type ActorAgentLlmMessage,
+  type ActorAgentLlmProvider,
+  type ActorAgentLlmRequest,
+  type ActorAgentLlmResult,
+  type ActorAgentLoopMessage,
+  type ActorAgentLoopReply,
+  type ActorAgentTokenUsage,
+  type ActorAgentToolCall,
+  createAgentLoopBehavior,
+  LLM_TOOL_NAME,
+  type ModelToolDefinition,
+} from './index.js';
+import {
+  type AgentRunner,
+  type AgentRunRequest,
+  type AgentSpec,
+  type AgentToolExample,
+  createAgent as bindAgent,
+  type FocusedAgent,
+} from './portable.js';
+import { createExecutionEvidence } from './runner-evidence.js';
+import {
+  equalJson,
+  InvalidJsonPayload,
+  JsonPayloadTooLarge,
+  measureJson,
+  ownData,
+  snapshotJson,
+} from './runner-json.js';
+import {
+  bindTraceConfiguration,
+  createRunTrace,
+  traceFailureCode,
+  traceMessage,
+  traceUsage,
+} from './runner-trace.js';
+import type { AgentRunTraceSnapshot, AgentTraceConfiguration } from './trace.js';
+
+export interface AgentToolHandler<Task> {
+  readonly name: string;
+  /** Synchronously validate and scope the input without effects. Return plain JSON data or throw. */
+  readonly validateInput: (input: unknown, task: Task) => { readonly value: unknown };
+  /** Receives a detached validated payload and returns plain JSON or a promise for it. */
+  readonly execute: (input: unknown, task: Task, context: ActorToolExecutionContext) => unknown;
+}
+
+type BudgetCode = 'MODEL_TURN_LIMIT' | 'TOOL_ATTEMPT_LIMIT' | 'PAYLOAD_BYTE_LIMIT';
+const budgetMessages: Record<BudgetCode, string> = {
+  MODEL_TURN_LIMIT: 'The assignment has no remaining model turn.',
+  TOOL_ATTEMPT_LIMIT: 'The application tool attempts would exceed the assignment limit.',
+  PAYLOAD_BYTE_LIMIT: 'The payload would exceed the assignment byte limit.',
+};
+
+function budgetFailure(code: BudgetCode): never {
+  throw new AgentRunnerError(code, budgetMessages[code]);
+}
+
+function createBudget(limits: AgentRunnerLimits) {
+  let modelTurns = limits.maxModelTurns;
+  let toolAttempts = limits.maxToolAttempts;
+  let payloadBytes = limits.maxPayloadBytes;
+  const requireModelTurn = () => {
+    if (modelTurns === 0) budgetFailure('MODEL_TURN_LIMIT');
+  };
+  const requireToolAttempts = (attempts: number) => {
+    if (attempts > toolAttempts) budgetFailure('TOOL_ATTEMPT_LIMIT');
+  };
+  const chargePayload = (bytes: number) => {
+    if (bytes > payloadBytes) budgetFailure('PAYLOAD_BYTE_LIMIT');
+    payloadBytes -= bytes;
+  };
+  return {
+    requireModelTurn,
+    requireToolAttempts,
+    chargePayload,
+    get payloadBytes() {
+      return payloadBytes;
+    },
+    dispatchModel(bytes: number) {
+      requireModelTurn();
+      chargePayload(bytes);
+      modelTurns--;
+    },
+    dispatchTool(bytes: number) {
+      requireToolAttempts(1);
+      chargePayload(bytes);
+      toolAttempts--;
+    },
+  };
+}
+
+function checkPayload<T>(code: string, read: () => T): T {
+  try {
+    return read();
+  } catch (cause) {
+    if (cause instanceof JsonPayloadTooLarge) budgetFailure('PAYLOAD_BYTE_LIMIT');
+    if (cause instanceof AgentRunnerError) throw cause;
+    throw new AgentRunnerError(code, 'Expected a plain JSON payload.');
+  }
+}
+
+export interface AgentRunnerLimits {
+  readonly runTimeoutMs: number;
+  /** Positive integer up to 214748364 ms, allowing for the local ask's 10× fallback timer. */
+  readonly askTimeoutMs: number;
+  readonly providerTimeoutMs: number;
+  readonly toolTimeoutMs: number;
+  readonly maxToolCallsPerBatch: number;
+  /** Positive safe integer; counts actual provider calls, including failed calls. */
+  readonly maxModelTurns: number;
+  /** Nonnegative safe integer; zero permits no application-tool handler calls. */
+  readonly maxToolAttempts: number;
+  /** Positive safe integer; cumulative compact JSON UTF-8 bytes at the local port boundaries. */
+  readonly maxPayloadBytes: number;
+}
+
+type ToolExampleMode = 'off' | 'description';
+
+export interface AgentRunnerOptions<Task, Purpose extends string> {
+  /** The trusted portable spec, including any output instructions appended by createAgent. */
+  readonly spec: Pick<AgentRunRequest<Task, Purpose>, 'purpose' | 'systemPrompt' | 'tools'> & {
+    readonly output?: { readonly instructions?: string };
+  };
+  readonly provider: ActorAgentLlmProvider;
+  readonly grants: readonly string[];
+  readonly tools: readonly AgentToolHandler<Task>[];
+  /** Append illustrative examples to effective tool descriptions. Default: 'off'. */
+  readonly toolExampleMode?: ToolExampleMode;
+  /** Defaults to strict plain-JSON encoding. Override to select model-visible task fields. */
+  readonly encodeTask?: (task: Task) => string;
+  readonly limits: AgentRunnerLimits;
+  /** Optional diagnostics. Choose a profile or provide low-level capture options. */
+  readonly trace?: AgentTraceConfiguration;
+}
+
+export type CreateAgentOptions<Content, Task extends object, Purpose extends string> = Omit<
+  AgentRunnerOptions<Task, Purpose>,
+  'spec'
+> & {
+  readonly spec: AgentSpec<Content, Task, Purpose>;
+};
+
+/** Bind a spec to a fresh-session runner. No actor starts until run is called. */
+export function createAgent<Content, Task extends object, Purpose extends string>(
+  options: CreateAgentOptions<Content, Task, Purpose>
+): FocusedAgent<Content, Task, Purpose> {
+  return bindAgent(createAgentRunner(options), options.spec);
+}
+
+/** Local cleanup facts for this invocation, not proof of a remote effect outcome. */
+export type AgentRunSettlement =
+  | { readonly status: 'not-admitted' }
+  | { readonly status: 'settled' }
+  | {
+      readonly status: 'unresolved';
+      readonly reason: 'wait-timeout' | 'runtime-start-failed' | 'runtime-stop-failed';
+    };
+
+export interface AgentRunHandle {
+  readonly result: Promise<string>;
+  /** Detached diagnostics for this invocation, or undefined when tracing is disabled. */
+  readonly readTrace: () => AgentRunTraceSnapshot | undefined;
+  /** Wait for local cleanup independently of the result. Zero makes an immediate observation. */
+  readonly waitForSettlement: (timeoutMs: number) => Promise<AgentRunSettlement>;
+}
+
+export interface AgentRunEvidenceBinding {
+  /** Host-owned opaque identifier, never task text or a secret. */
+  readonly assignmentId: string;
+  readonly revision: number;
+}
+
+export interface AgentRunEvidenceSnapshot {
+  readonly trace: AgentExecutionTrace;
+  /** True if a receipt could not be recorded; the trace contains only the retained prefix. */
+  readonly truncated: boolean;
+}
+
+export interface ObservedAgentRunHandle extends AgentRunHandle {
+  /** A detached snapshot, or undefined if this invocation has no recorded local session attempt. */
+  readonly readEvidence: () => AgentRunEvidenceSnapshot | undefined;
+  /** Runs one host parser on this invocation's result. Validation is not workflow acceptance. */
+  readonly validateOutput: <Content>(
+    parse: (raw: string) => Content | Promise<Content>,
+    validator?: { readonly id: string; readonly revision: string }
+  ) => Promise<Content>;
+}
+
+export interface InProcessAgentRunner<Task, Purpose extends string = string>
+  extends AgentRunner<Task, Purpose> {
+  readonly start: {
+    (request: AgentRunRequest<Task, Purpose>): AgentRunHandle;
+    (
+      request: AgentRunRequest<Task, Purpose>,
+      evidence: AgentRunEvidenceBinding
+    ): ObservedAgentRunHandle;
+  };
+}
+
+export class AgentRunnerError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    cause?: unknown
+  ) {
+    super(message, { cause });
+    this.name = 'AgentRunnerError';
+  }
+}
+
+const localNode = 'portable-agent';
+const maxTimerMs = 2_147_483_647;
+// The local actor ask schedules a correlation fallback at ten times the requested delay.
+const maxAskTimeoutMs = Math.floor(maxTimerMs / 10);
+
+const settlementWaitExpired = Object.freeze({
+  status: 'unresolved',
+  reason: 'wait-timeout',
+} as const);
+
+function createSettlementObserver() {
+  let final: AgentRunSettlement | undefined;
+  const listeners = new Set<(value: AgentRunSettlement) => void>();
+  return {
+    finish(value: AgentRunSettlement): void {
+      final = Object.freeze(value);
+      for (const notify of listeners) notify(final);
+    },
+    async waitForSettlement(timeoutMs: number): Promise<AgentRunSettlement> {
+      if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > maxTimerMs) {
+        throw new AgentRunnerError(
+          'INVALID_SETTLEMENT_WAIT',
+          `Settlement wait must be an integer from 0 to ${maxTimerMs} ms.`
+        );
+      }
+      if (final || timeoutMs === 0) return final ?? settlementWaitExpired;
+      const until = performance.now() + timeoutMs;
+      return new Promise((resolve) => {
+        const finish = (value: AgentRunSettlement) => {
+          listeners.delete(notify);
+          clearTimeout(timer);
+          resolve(value);
+        };
+        const notify = (value: AgentRunSettlement) => {
+          finish(performance.now() < until ? value : settlementWaitExpired);
+        };
+        const expire = () => {
+          const remaining = until - performance.now();
+          if (remaining > 0) timer = setTimeout(expire, Math.ceil(remaining));
+          else finish(settlementWaitExpired);
+        };
+        let timer = setTimeout(expire, timeoutMs);
+        listeners.add(notify);
+      });
+    },
+  };
+}
+
+function invalidConfig(message: string): never {
+  throw new AgentRunnerError('INVALID_RUNTIME_CONFIG', message);
+}
+
+function isToken(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && !/[\s\p{Cc}]/u.test(value);
+}
+
+function checkToolName(name: unknown): asserts name is string {
+  if (!isToken(name) || name === LLM_TOOL_NAME || Object.hasOwn(Object.prototype, name)) {
+    invalidConfig('Invalid or reserved application tool name.');
+  }
+}
+
+type RequestedTool = ModelToolDefinition & { readonly examples?: readonly AgentToolExample[] };
+
+function snapshotExamples(entry: object): readonly AgentToolExample[] | undefined {
+  if (!Object.hasOwn(entry, 'examples')) return undefined;
+  const raw = ownData(entry, 'examples');
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw) || raw.length > 4) invalidConfig('Expected at most 4 examples per tool.');
+  // Detach and validate all nested data before inspecting or rendering any pair.
+  const { value: examples } = snapshotJson(raw, 4096, true);
+  for (const example of examples) {
+    if (
+      !example ||
+      typeof example !== 'object' ||
+      Array.isArray(example) ||
+      Object.keys(example).length !== 2 ||
+      !Object.hasOwn(example, 'input') ||
+      !Object.hasOwn(example, 'result') ||
+      example.input === null ||
+      typeof example.input !== 'object' ||
+      Array.isArray(example.input)
+    ) {
+      invalidConfig('Each tool example must have an input object and a JSON result.');
+    }
+  }
+  return examples.length ? examples : undefined;
+}
+
+function modelTool(
+  { examples, ...definition }: RequestedTool,
+  mode: ToolExampleMode
+): ModelToolDefinition {
+  if (mode !== 'description' || !examples) return definition;
+  return {
+    ...definition,
+    description: [
+      definition.description,
+      'Illustrative calls and results; not observations from this task:',
+      ...examples.map((example) => JSON.stringify(example)),
+    ].join('\n'),
+  };
+}
+
+function snapshotRequested(tools: unknown): RequestedTool[] {
+  if (!Array.isArray(tools)) invalidConfig('An explicit requested tool list is required.');
+  const seen = new Set<string>();
+  try {
+    const requested: RequestedTool[] = [];
+    for (let index = 0; index < tools.length; index++) {
+      const entry = ownData(tools, String(index));
+      if (typeof entry !== 'object' || entry === null) throw new InvalidJsonPayload();
+      const name = ownData(entry, 'name');
+      const description = ownData(entry, 'description');
+      const parameters = ownData(entry, 'parameters');
+      checkToolName(name);
+      if (
+        seen.has(name) ||
+        typeof description !== 'string' ||
+        !description.trim() ||
+        typeof parameters !== 'object' ||
+        parameters === null ||
+        Array.isArray(parameters)
+      ) {
+        return invalidConfig('Invalid or duplicate requested tool definition.');
+      }
+      seen.add(name);
+      const examples = snapshotExamples(entry);
+      requested.push(
+        Object.freeze({
+          name,
+          description,
+          inputSchema: snapshotJson(
+            parameters as ModelToolDefinition['inputSchema'],
+            Number.MAX_SAFE_INTEGER,
+            true
+          ).value,
+          ...(examples && { examples }),
+        })
+      );
+    }
+    return requested;
+  } catch (cause) {
+    if (cause instanceof AgentRunnerError) throw cause;
+    if (cause instanceof JsonPayloadTooLarge)
+      return invalidConfig('Tool definition exceeds the JSON size limit (4 KiB for examples).');
+    return invalidConfig('Tool parameters and examples must contain plain JSON data.');
+  }
+}
+
+function bindConfig<Task, Purpose extends string>(options: AgentRunnerOptions<Task, Purpose>) {
+  if (!options) invalidConfig('Agent runner options are required.');
+  const { spec, grants, tools, provider, toolExampleMode = 'off' } = options;
+  const encodeTask =
+    options.encodeTask === undefined
+      ? (task: Task) => JSON.stringify(snapshotJson(task, Number.MAX_SAFE_INTEGER).value)
+      : options.encodeTask;
+  if (toolExampleMode !== 'off' && toolExampleMode !== 'description') {
+    invalidConfig('Expected toolExampleMode to be off or description.');
+  }
+  if (
+    !spec ||
+    typeof spec.purpose !== 'string' ||
+    !spec.purpose.trim() ||
+    typeof spec.systemPrompt !== 'string' ||
+    !spec.systemPrompt.trim() ||
+    (spec.output !== undefined && (!spec.output || typeof spec.output !== 'object')) ||
+    (spec.output?.instructions !== undefined && typeof spec.output.instructions !== 'string') ||
+    typeof provider !== 'function' ||
+    typeof encodeTask !== 'function' ||
+    !Array.isArray(grants) ||
+    !Array.isArray(tools)
+  ) {
+    invalidConfig('A trusted spec, provider, task encoder, grants and tools are required.');
+  }
+  const { limits: suppliedLimits } = options;
+  const timedLimits = {
+    runTimeoutMs: suppliedLimits?.runTimeoutMs,
+    askTimeoutMs: suppliedLimits?.askTimeoutMs,
+    providerTimeoutMs: suppliedLimits?.providerTimeoutMs,
+    toolTimeoutMs: suppliedLimits?.toolTimeoutMs,
+    maxToolCallsPerBatch: suppliedLimits?.maxToolCallsPerBatch,
+  };
+  for (const [name, limit] of Object.entries(timedLimits)) {
+    // Browser and Node timers cannot represent delays above the signed 32-bit maximum.
+    const max = name === 'askTimeoutMs' ? maxAskTimeoutMs : maxTimerMs;
+    if (!Number.isInteger(limit) || limit < 1 || limit > max) {
+      invalidConfig(`${name} must be a positive integer no greater than ${max}.`);
+    }
+  }
+  const budgets = {
+    maxModelTurns: suppliedLimits?.maxModelTurns,
+    maxToolAttempts: suppliedLimits?.maxToolAttempts,
+    maxPayloadBytes: suppliedLimits?.maxPayloadBytes,
+  };
+  for (const [name, limit] of Object.entries(budgets)) {
+    const allowZero = name === 'maxToolAttempts';
+    if (!Number.isSafeInteger(limit) || limit < (allowZero ? 0 : 1)) {
+      invalidConfig(`${name} must be a ${allowZero ? 'nonnegative' : 'positive'} safe integer.`);
+    }
+  }
+  const requested = snapshotRequested(spec.tools);
+  const granted = new Set<string>();
+  for (const name of grants) {
+    checkToolName(name);
+    if (granted.has(name)) invalidConfig('Duplicate tool grant.');
+    granted.add(name);
+  }
+  const implementations = new Map<string, AgentToolHandler<Task>>();
+  for (const implementation of tools as readonly AgentToolHandler<Task>[]) {
+    if (!implementation) invalidConfig('Invalid tool implementation.');
+    const { name, validateInput, execute } = implementation;
+    checkToolName(name);
+    if (
+      implementations.has(name) ||
+      typeof validateInput !== 'function' ||
+      typeof execute !== 'function'
+    ) {
+      invalidConfig('Each registered tool must have a unique name, validator and handler.');
+    }
+    implementations.set(name, { name, validateInput, execute });
+  }
+  const effective = requested.flatMap((definition) => {
+    const implementation = implementations.get(definition.name);
+    return granted.has(definition.name) && implementation
+      ? [{ definition: modelTool(definition, toolExampleMode), implementation }]
+      : [];
+  });
+  let trace: ReturnType<typeof bindTraceConfiguration>;
+  try {
+    trace = bindTraceConfiguration(options.trace);
+  } catch {
+    invalidConfig('Invalid trace configuration.');
+  }
+  return {
+    purpose: spec.purpose,
+    systemPrompt: spec.output?.instructions
+      ? `${spec.systemPrompt}\n${spec.output.instructions}`
+      : spec.systemPrompt,
+    requested,
+    effective,
+    limits: Object.freeze({ ...timedLimits, ...budgets }),
+    encodeTask,
+    provider,
+    trace,
+    toolExampleMode,
+  };
+}
+
+function verifyRunRequest<Task, Purpose extends string>(
+  config: ReturnType<typeof bindConfig<Task, Purpose>>,
+  request: AgentRunRequest<Task, Purpose>
+): void {
+  let requested: RequestedTool[];
+  try {
+    requested = snapshotRequested(request.tools);
+  } catch (cause) {
+    throw new AgentRunnerError('SPEC_MISMATCH', 'Invalid run request tool definitions.', cause);
+  }
+  if (
+    request.purpose !== config.purpose ||
+    request.systemPrompt !== config.systemPrompt ||
+    !equalJson(requested, config.requested)
+  ) {
+    throw new AgentRunnerError('SPEC_MISMATCH', 'Run request does not match the trusted spec.');
+  }
+}
+
+function executionFailure(code: string, message: string, cause: unknown): AgentRunnerError {
+  if (
+    typeof cause === 'object' &&
+    cause !== null &&
+    'code' in cause &&
+    typeof cause.code === 'string' &&
+    'message' in cause &&
+    typeof cause.message === 'string'
+  ) {
+    return new AgentRunnerError(cause.code, cause.message, cause);
+  }
+  return new AgentRunnerError(code, message, cause);
+}
+
+type DispatchDeadlineCode = 'ACTOR_ASK_FAILED' | 'PROVIDER_TIMEOUT' | 'TOOL_TIMEOUT';
+type Deadline = { readonly at: number; readonly failure: AgentRunnerError };
+
+function createRunScope(callerSignal: AbortSignal, runTimeoutMs: number) {
+  const controller = new AbortController();
+  const { signal } = controller;
+  const rawWork = new Set<Promise<unknown>>();
+  const deadlines = new Set<Deadline>();
+  let rejectInterrupted: (reason: unknown) => void = () => {};
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    rejectInterrupted = reject;
+  });
+  const interrupt = (reason: AgentRunnerError) => {
+    if (signal.aborted) return;
+    // Reject the caller independently of any cooperative abort handlers.
+    rejectInterrupted(reason);
+    controller.abort(reason);
+  };
+  const abort = () =>
+    interrupt(
+      new AgentRunnerError('RUN_ABORTED', 'The assignment was aborted.', callerSignal.reason)
+    );
+  const observeDeadlines = () => {
+    if (signal.aborted) return;
+    if (callerSignal.aborted) {
+      abort();
+      return;
+    }
+    const now = performance.now();
+    let earliest: Deadline | undefined;
+    // Equal absolute deadlines keep registration order (outer operation first).
+    for (const deadline of deadlines) {
+      if (deadline.at <= now && (!earliest || deadline.at < earliest.at)) earliest = deadline;
+    }
+    if (earliest) interrupt(earliest.failure);
+  };
+  const startDeadline = (failure: AgentRunnerError, timeoutMs: number) => {
+    const deadline = { at: performance.now() + timeoutMs, failure };
+    deadlines.add(deadline);
+    const onTimer = () => {
+      observeDeadlines();
+      if (!signal.aborted) {
+        // Timer delivery can round down. Recheck the clock instead of committing early.
+        timer = setTimeout(onTimer, Math.max(1, Math.ceil(deadline.at - performance.now())));
+      }
+    };
+    let timer = setTimeout(onTimer, timeoutMs);
+    return () => {
+      deadlines.delete(deadline);
+      clearTimeout(timer);
+    };
+  };
+  const finishRunDeadline = startDeadline(
+    new AgentRunnerError('RUN_TIMEOUT', 'The assignment deadline expired.'),
+    runTimeoutMs
+  );
+  callerSignal.addEventListener('abort', abort, { once: true });
+  const check = () => {
+    observeDeadlines();
+    signal.throwIfAborted();
+  };
+  const wait = <T>(work: Promise<T>): Promise<T> => Promise.race([work, interrupted]);
+  const track = <T>(operation: () => T | Promise<T>): Promise<T> => {
+    const raw = Promise.resolve().then(() => {
+      check();
+      return operation();
+    });
+    rawWork.add(raw);
+    const remove = () => rawWork.delete(raw);
+    void raw.then(remove, remove);
+    return raw;
+  };
+  return {
+    check,
+    checked<T>(checkPayload: () => T): T {
+      check();
+      try {
+        return checkPayload();
+      } finally {
+        check();
+      }
+    },
+    signal,
+    wait,
+    async dispatch<T>(
+      code: DispatchDeadlineCode,
+      timeoutMs: number,
+      operation: () => T | Promise<T>
+    ): Promise<T> {
+      check();
+      const finish = startDeadline(
+        new AgentRunnerError(
+          code,
+          code === 'ACTOR_ASK_FAILED'
+            ? 'The actor reply deadline expired.'
+            : 'The dispatch deadline expired.'
+        ),
+        timeoutMs
+      );
+      try {
+        const raw = track(operation);
+        try {
+          return await wait(raw);
+        } finally {
+          // Keep this deadline active for both successful and failed completions.
+          check();
+        }
+      } catch (cause) {
+        if (code !== 'ACTOR_ASK_FAILED' || signal.aborted) throw cause;
+        const failure = executionFailure(code, 'The actor did not answer.', cause);
+        interrupt(failure);
+        throw failure;
+      } finally {
+        finish();
+      }
+    },
+    async drain(): Promise<void> {
+      await Promise.allSettled(rawWork);
+    },
+    dispose(): void {
+      callerSignal.removeEventListener('abort', abort);
+      finishRunDeadline();
+    },
+  };
+}
+
+function dataField(value: unknown, key: string): unknown {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const field = Object.getOwnPropertyDescriptor(value, key);
+  if (field && !('value' in field)) throw new InvalidJsonPayload();
+  return field?.value;
+}
+
+function bindEvidence(
+  binding: AgentRunEvidenceBinding
+): ReturnType<typeof createExecutionEvidence> {
+  const assignmentId = binding?.assignmentId;
+  const revision = binding?.revision;
+  if (
+    typeof assignmentId !== 'string' ||
+    !/^[A-Za-z0-9_.:-]{1,128}$/.test(assignmentId) ||
+    !Number.isSafeInteger(revision) ||
+    revision < 0
+  ) {
+    throw new AgentRunnerError(
+      'INVALID_EVIDENCE_BINDING',
+      'Evidence requires a bounded opaque assignment ID and a nonnegative integer revision.'
+    );
+  }
+  return createExecutionEvidence(assignmentId, revision);
+}
+
+function descriptorInChain(value: object, key: string): PropertyDescriptor | undefined {
+  for (let current: object | null = value; current; current = Object.getPrototypeOf(current)) {
+    const descriptor = Object.getOwnPropertyDescriptor(current, key);
+    if (descriptor) return descriptor;
+  }
+  return undefined;
+}
+
+type Held<T> = { value: T };
+
+function holdValue<T>(value: T): Held<T> {
+  // Do not inherit a `then` hook while the native Promise assimilates the box itself.
+  const box = { __proto__: null, value };
+  return box;
+}
+
+function isClassPrototype(prototype: object): boolean {
+  const constructorField = Object.getOwnPropertyDescriptor(prototype, 'constructor');
+  if (!constructorField || !Object.hasOwn(constructorField, 'value')) return false;
+  const cls: unknown = constructorField.value;
+  if (typeof cls !== 'function') return false;
+  const link = Object.getOwnPropertyDescriptor(cls, 'prototype');
+  // A class's immutable prototype link must point back to this exact object. The
+  // intrinsic source check distinguishes it from every realm's Object constructor.
+  if (
+    !link ||
+    !Object.hasOwn(link, 'value') ||
+    link.value !== prototype ||
+    link.writable !== false
+  ) {
+    return false;
+  }
+  const source = Function.prototype.toString.call(cls);
+  if (!/^class(?=\s|\/[*/]|\{)/.test(source)) return false;
+  const afterKeyword = source
+    .slice(5)
+    .replace(/^(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\r\n\u2028\u2029]*)*/, '');
+  return !afterKeyword.startsWith('(');
+}
+
+function portThen(value: object): unknown {
+  const prototype: object | null = Object.getPrototypeOf(value);
+  for (let owner: object | null = value; owner; ) {
+    const parent: object | null = owner === value ? prototype : Object.getPrototypeOf(owner);
+    const descriptor = Object.getOwnPropertyDescriptor(owner, 'then');
+    if (descriptor) {
+      // Data methods do not require running a getter, regardless of their owner.
+      if (Object.hasOwn(descriptor, 'value')) return descriptor.value;
+      if (
+        !descriptor.get ||
+        Array.isArray(value) ||
+        prototype === null ||
+        (Object.getPrototypeOf(prototype) === null && !isClassPrototype(prototype)) ||
+        (parent === null && owner !== prototype && !isClassPrototype(owner))
+      ) {
+        return undefined;
+      }
+      // An ambiguous root (including every realm's Object.prototype) never
+      // contributes an accessor. For a wrapper, use the port result as the receiver.
+      return Reflect.apply(descriptor.get, value, []);
+    }
+    owner = parent;
+  }
+  return undefined;
+}
+
+// Box synchronous data and wrapper fulfillments before resolving a native Promise.
+// Plain records and arrays never run a `then` accessor during port adoption.
+function holdPortResult<T>(value: T | Promise<T>, chain?: Set<object>): Held<T> | Promise<Held<T>> {
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) {
+    return holdValue(value as T);
+  }
+  try {
+    // Native promises (including from another realm) do not need property-based detection.
+    return Promise.prototype.then.call(value, (result: T) => holdValue(result)) as Promise<Held<T>>;
+  } catch (cause) {
+    if (!(cause instanceof TypeError)) throw cause;
+  }
+
+  if (chain?.has(value)) throw new TypeError('A returned Promise wrapper resolved cyclically.');
+  const then = portThen(value);
+  if (typeof then !== 'function') return holdValue(value as T);
+  const pending = chain ?? new Set<object>();
+  pending.add(value);
+
+  return new Promise<Held<T>>((resolve, reject) => {
+    // Like native thenable assimilation, invoke the method asynchronously and let only
+    // its first settlement win, even if that fulfillment adopts another pending wrapper.
+    queueMicrotask(() => {
+      let settled = false;
+      const refuse = (reason: unknown) => {
+        if (settled) return;
+        settled = true;
+        reject(reason);
+      };
+      const fulfill = (result: T | Promise<T>) => {
+        if (settled) return;
+        settled = true;
+        try {
+          resolve(holdPortResult(result, pending));
+        } catch (cause) {
+          reject(cause);
+        }
+      };
+      try {
+        Reflect.apply(then, value, [fulfill, refuse]);
+      } catch (cause) {
+        refuse(cause);
+      }
+    });
+  });
+}
+
+function normalizeRequest(request: ActorAgentLlmRequest): ActorAgentLlmRequest {
+  return {
+    ...(request.system === undefined ? {} : { system: request.system }),
+    messages: request.messages,
+    tools: request.tools,
+    ...(request.toolDefinitions === undefined ? {} : { toolDefinitions: request.toolDefinitions }),
+  };
+}
+
+function diagnosticCause(diagnostic: object): unknown {
+  try {
+    return descriptorInChain(diagnostic, 'cause')?.value;
+  } catch {
+    // Optional metadata must not replace the provider's valid code and message.
+    return undefined;
+  }
+}
+
+function normalizeProviderStep(
+  result: unknown,
+  maxCalls: number,
+  budget: ReturnType<typeof createBudget>
+): ActorAgentLlmResult {
+  const ok = checkPayload('INVALID_PROVIDER_REPLY', () => dataField(result, 'ok'));
+  if (ok === false) {
+    try {
+      const diagnostic = dataField(result, 'error');
+      if (typeof diagnostic === 'object' && diagnostic !== null) {
+        // Diagnostics aren't metered JSON. Read the required public fields, including on
+        // Error subclasses, but do not force an optional lazy cause.
+        const { code, message } = diagnostic as { code?: unknown; message?: unknown };
+        if (typeof code === 'string' && typeof message === 'string') {
+          const cause = diagnosticCause(diagnostic);
+          return { ok: false, error: { code, message, ...(cause === undefined ? {} : { cause }) } };
+        }
+      }
+    } catch {
+      // A diagnostic whose required fields cannot be read is a malformed provider reply.
+    }
+    throw new AgentRunnerError('INVALID_PROVIDER_REPLY', 'Expected a plain JSON payload.');
+  }
+  if (ok !== true) {
+    throw new AgentRunnerError('INVALID_PROVIDER_REPLY', 'Expected a provider result.');
+  }
+  return checkPayload('INVALID_ASSISTANT_REPLY', () => {
+    const value = dataField(result, 'value');
+    const message = dataField(value, 'message');
+    const content = dataField(message, 'content');
+    const calls = dataField(message, 'toolCalls');
+    if (
+      dataField(message, 'role') !== 'assistant' ||
+      typeof content !== 'string' ||
+      (calls !== undefined && !Array.isArray(calls))
+    ) {
+      throw new AgentRunnerError('INVALID_ASSISTANT_REPLY', 'Expected an assistant message.');
+    }
+    const callCount =
+      calls === undefined ? 0 : Object.getOwnPropertyDescriptor(calls, 'length')?.value;
+    if (typeof callCount !== 'number') throw new InvalidJsonPayload();
+    if (callCount > maxCalls) {
+      throw new AgentRunnerError(
+        'TOOL_BATCH_LIMIT',
+        'The tool batch exceeds the configured limit.'
+      );
+    }
+    const metadata = snapshotJson(
+      {
+        ...(dataField(message, 'reasoningSummaries') === undefined
+          ? {}
+          : { reasoningSummaries: dataField(message, 'reasoningSummaries') }),
+        ...(dataField(message, 'providerState') === undefined
+          ? {}
+          : { providerState: dataField(message, 'providerState') }),
+      },
+      budget.payloadBytes
+    ).value;
+    if (
+      metadata.reasoningSummaries !== undefined &&
+      (!Array.isArray(metadata.reasoningSummaries) ||
+        !metadata.reasoningSummaries.every((text) => typeof text === 'string'))
+    ) {
+      throw new AgentRunnerError('INVALID_ASSISTANT_REPLY', 'Expected reasoning summary strings.');
+    }
+    const state = metadata.providerState as ActorAgentLlmMessage['providerState'];
+    if (
+      state !== undefined &&
+      (!state ||
+        state.format !== 'openai-responses' ||
+        !Array.isArray(state.reasoningItems) ||
+        !state.reasoningItems.every(
+          (item) =>
+            item !== null &&
+            typeof item === 'object' &&
+            !Array.isArray(item) &&
+            item.type === 'reasoning' &&
+            typeof item.id === 'string'
+        ))
+    ) {
+      throw new AgentRunnerError(
+        'INVALID_ASSISTANT_REPLY',
+        'Expected opaque Responses reasoning items.'
+      );
+    }
+    const toolCalls: ActorAgentToolCall[] = [];
+    const normalized = {
+      role: 'assistant' as const,
+      content,
+      ...(metadata.reasoningSummaries === undefined
+        ? {}
+        : { reasoningSummaries: metadata.reasoningSummaries as string[] }),
+      ...(state === undefined ? {} : { providerState: state }),
+      ...(calls === undefined ? {} : { toolCalls }),
+    };
+    // Measure with the empty calls array first, then add each normalized element and comma.
+    let bytes = measureJson(normalized, budget.payloadBytes);
+    for (let index = 0; index < callCount; index++) {
+      const separator = index === 0 ? 0 : 1;
+      const remaining = budget.payloadBytes - bytes - separator;
+      if (remaining < 0) budgetFailure('PAYLOAD_BYTE_LIMIT');
+      const call = checkPayload('INVALID_TOOL_CALL', () => {
+        if (!Array.isArray(calls)) throw new InvalidJsonPayload();
+        const raw = ownData(calls, String(index));
+        const id = dataField(raw, 'id');
+        const name = dataField(raw, 'name');
+        if (typeof id !== 'string' || !id) {
+          throw new AgentRunnerError('INVALID_TOOL_CALL_ID', 'Expected a nonempty tool call ID.');
+        }
+        if (typeof name !== 'string' || !name) {
+          throw new AgentRunnerError('INVALID_TOOL_CALL', 'Expected a tool name and input.');
+        }
+        const detached = snapshotJson({ id, name, input: dataField(raw, 'input') }, remaining);
+        if (!isToken(id)) {
+          throw new AgentRunnerError('INVALID_TOOL_CALL_ID', 'Expected a nonempty tool call ID.');
+        }
+        if (!isToken(name)) {
+          throw new AgentRunnerError('INVALID_TOOL_CALL', 'Expected a tool name and input.');
+        }
+        return detached;
+      });
+      bytes += separator + call.bytes;
+      toolCalls.push(call.value);
+    }
+    const usage = dataField(value, 'usage') as ActorAgentTokenUsage | undefined;
+    budget.chargePayload(bytes);
+    return {
+      ok: true,
+      value: { message: normalized, ...(usage === undefined ? {} : { usage }) },
+    };
+  });
+}
+
+async function driveLoop<Task>(
+  ask: (message: ActorAgentLoopMessage) => Promise<ActorAgentLoopReply>,
+  toolbox: ReturnType<typeof createActorToolbox>,
+  implementations: ReadonlyMap<string, AgentToolHandler<Task>>,
+  scope: ReturnType<typeof createRunScope>,
+  budget: ReturnType<typeof createBudget>,
+  task: Task,
+  prompt: string,
+  system: string,
+  trace?: ReturnType<typeof createRunTrace>
+): Promise<string> {
+  const seen = new Set<string>();
+  let reply = await ask({ type: 'START_AGENT', prompt, system });
+  for (;;) {
+    scope.check();
+    if (!reply.ok)
+      throw new AgentRunnerError(reply.error.code, reply.error.message, reply.error.cause);
+    if (
+      reply.status === 'responded' &&
+      reply.message.role === 'assistant' &&
+      !reply.toolCalls.length
+    ) {
+      if (reply.message.content.trim()) return reply.message.content;
+      throw new AgentRunnerError('INVALID_ASSISTANT_REPLY', 'Expected final assistant text.');
+    }
+    if (
+      reply.status !== 'waiting-for-tool' ||
+      reply.message.role !== 'assistant' ||
+      reply.toolCalls.length === 0
+    ) {
+      throw new AgentRunnerError(
+        'UNEXPECTED_REPLY',
+        'Expected an assistant tool batch or final reply.'
+      );
+    }
+
+    // Validate and detach the whole batch before any handler runs. IDs stay reserved for the session.
+    const modelCall = trace?.modelCall;
+    const reference = (id: string, name: string) => ({
+      turn: modelCall?.turn ?? 0,
+      modelCallId: modelCall?.modelCallId ?? '',
+      toolCallId: id,
+      name,
+    });
+    for (const call of reply.toolCalls) {
+      trace?.emit({
+        type: 'tool.requested',
+        ...reference(call.id, call.name),
+        input: trace.capture('tool.input', call.input as JsonValue),
+      });
+    }
+    let batchBytes = budget.payloadBytes;
+    let rejectedId: string | undefined;
+    let batch: { id: string; name: string; input: unknown }[];
+    try {
+      batch = reply.toolCalls.map((call) =>
+        scope.checked(() => {
+          const { id, name } = call;
+          rejectedId = id;
+          if (seen.has(id)) {
+            throw new AgentRunnerError(
+              'DUPLICATE_TOOL_CALL_ID',
+              'A tool call ID cannot be reused.'
+            );
+          }
+          seen.add(id);
+          const implementation = implementations.get(name);
+          if (!implementation || !toolbox.has(name)) {
+            throw new AgentRunnerError(
+              'TOOL_DENIED',
+              'The tool is not granted for this assignment.'
+            );
+          }
+          let payload: unknown;
+          try {
+            const validated = implementation.validateInput(call.input, task);
+            if (validated instanceof Promise) {
+              void validated.catch(() => {});
+              throw new Error('Tool validators must be synchronous.');
+            }
+            payload = dataField(validated, 'value');
+          } catch (cause) {
+            throw executionFailure('INVALID_TOOL_INPUT', 'The tool input was refused.', cause);
+          }
+          const { value: input, bytes } = checkPayload('INVALID_TOOL_INPUT', () =>
+            snapshotJson(payload, batchBytes)
+          );
+          batchBytes -= bytes;
+          return { id, name, input };
+        })
+      );
+      rejectedId = undefined;
+      budget.requireToolAttempts(batch.length);
+      // The loop always asks the model again immediately after the last tool receipt.
+      budget.requireModelTurn();
+    } catch (cause) {
+      for (const call of reply.toolCalls) {
+        trace?.emit({
+          type: 'tool.rejected',
+          ...reference(call.id, call.name),
+          failure: {
+            code:
+              rejectedId === undefined || call.id === rejectedId
+                ? traceFailureCode(cause, 'INVALID_TOOL_INPUT')
+                : 'BATCH_REJECTED',
+          },
+        });
+      }
+      throw cause;
+    }
+
+    for (const [index, { id, name, input }] of batch.entries()) {
+      scope.check();
+      let output: unknown;
+      const started = performance.now();
+      const attemptsBefore = trace?.toolAttempts;
+      const tracedInput = trace?.capture('tool.input', input as JsonValue);
+      try {
+        output = await toolbox.execute(name, input);
+        trace?.emit({
+          type: 'tool.observed',
+          ...reference(id, name),
+          attempt: 1,
+          input: tracedInput ?? { status: 'omitted', reason: 'disabled' },
+          output: trace.capture('tool.output', output as JsonValue),
+          durationMs: Math.max(0, performance.now() - started),
+        });
+      } catch (cause) {
+        if (trace) {
+          const failure = { code: traceFailureCode(cause, 'TOOL_FAILED') };
+          trace.emit(
+            trace.toolAttempts === attemptsBefore
+              ? { type: 'tool.rejected', ...reference(id, name), failure }
+              : {
+                  type: 'tool.failed',
+                  ...reference(id, name),
+                  failure,
+                  attempt: 1,
+                  durationMs: Math.max(0, performance.now() - started),
+                }
+          );
+          for (const remaining of batch.slice(index + 1)) {
+            trace.emit({
+              type: 'tool.rejected',
+              ...reference(remaining.id, remaining.name),
+              failure: { code: 'BATCH_INTERRUPTED' },
+            });
+          }
+        }
+        throw executionFailure('TOOL_FAILED', 'The application tool failed.', cause);
+      }
+      reply = await ask({ type: 'OBSERVE_TOOL_RESULT', toolCallId: id, name, ok: true, output });
+      if (!reply.ok)
+        throw new AgentRunnerError(reply.error.code, reply.error.message, reply.error.cause);
+      if (
+        index < batch.length - 1 &&
+        (reply.status !== 'waiting-for-tool' ||
+          reply.message.role !== 'tool' ||
+          reply.message.toolCallId !== id ||
+          reply.message.toolName !== name ||
+          reply.toolCalls.length !== 0)
+      ) {
+        throw new AgentRunnerError(
+          'UNEXPECTED_REPLY',
+          'Expected acknowledgement of the tool result.'
+        );
+      }
+    }
+  }
+}
+
+/** Create a reusable runner. Each admitted assignment gets its own in-process actor session. */
+export function createAgentRunner<Task, Purpose extends string>(
+  options: AgentRunnerOptions<Task, Purpose>
+): InProcessAgentRunner<Task, Purpose> {
+  const config = bindConfig(options);
+  const implementations = new Map(
+    config.effective.map(({ implementation }) => [implementation.name, implementation])
+  );
+  const names = [LLM_TOOL_NAME, ...implementations.keys()];
+  let active = false;
+
+  const runner = {
+    async run(
+      request: AgentRunRequest<Task, Purpose>,
+      observation?: {
+        publish(value: AgentRunSettlement): void;
+        evidence: ReturnType<typeof createExecutionEvidence> | undefined;
+        trace: ReturnType<typeof createRunTrace> | undefined;
+        signal?: AbortSignal;
+      }
+    ): Promise<string> {
+      const evidence = observation?.evidence;
+      const trace = observation?.trace;
+      let callerSignal: AbortSignal;
+      try {
+        if (active) throw new AgentRunnerError('RUNTIME_BUSY', 'The runner is active or fenced.');
+        callerSignal = request?.signal;
+        if (!(callerSignal instanceof AbortSignal)) {
+          throw new AgentRunnerError('INVALID_TURN', 'An explicit AbortSignal is required.');
+        }
+        if (callerSignal.aborted) {
+          throw new AgentRunnerError(
+            'RUN_ABORTED',
+            'The assignment was aborted.',
+            callerSignal.reason
+          );
+        }
+      } catch (cause) {
+        observation?.publish({ status: 'not-admitted' });
+        throw cause;
+      }
+
+      active = true;
+      if (observation) observation.signal = callerSignal;
+      const scope = createRunScope(callerSignal, config.limits.runTimeoutMs);
+      const budget = createBudget(config.limits);
+      let startAttempted = false;
+      let unconfirmed: 'runtime-start-failed' | 'runtime-stop-failed' | undefined;
+      const runOwned = async () => {
+        verifyRunRequest(config, request);
+        scope.check();
+        const task = request.task;
+        if (trace && config.trace) {
+          trace.emit({
+            type: 'run.started',
+            purpose: config.purpose,
+            methodRevision: config.trace.methodRevision,
+            ...(config.trace.case ? { case: config.trace.case } : {}),
+            ...(config.trace.codeRevision ? { codeRevision: config.trace.codeRevision } : {}),
+            task: trace.capture('task', task as JsonValue),
+            configuration: trace.capture('configuration', {
+              toolExampleMode: config.toolExampleMode,
+              limits: { ...config.limits },
+            }),
+          });
+        }
+        let prompt: string;
+        try {
+          prompt = config.encodeTask(task);
+        } catch (cause) {
+          throw executionFailure('INVALID_TASK', 'The task could not be encoded.', cause);
+        }
+        if (typeof prompt !== 'string' || !prompt.trim()) {
+          throw new AgentRunnerError(
+            'INVALID_TASK',
+            'The task encoder must return a nonempty string.'
+          );
+        }
+        scope.check();
+
+        const topology = defineTopology({
+          nodes: { local: node(localNode) },
+          tools: names.map((name) => tool(name)),
+          actors: {
+            specialist: actor({
+              id: 'specialist',
+              node: 'local',
+              tools: names,
+              supervision: { strategy: 'stop' },
+              behavior: createAgentLoopBehavior({
+                toolDefinitions: config.effective.map(({ definition }) => definition),
+              }),
+            }),
+          },
+        });
+        const applicationTools = Object.fromEntries(
+          Array.from(implementations, ([name, { execute }], index): [string, ActorToolExecutor] => [
+            name,
+            async (input, context) => {
+              const portContext = { ...context, signal: scope.signal };
+              const bytes = scope.checked(() =>
+                checkPayload('INVALID_TOOL_INPUT', () => measureJson(input, budget.payloadBytes))
+              );
+              const toolOrdinal = index + 1;
+              let attempt: number | undefined;
+              try {
+                const { value } = await scope.dispatch(
+                  'TOOL_TIMEOUT',
+                  config.limits.toolTimeoutMs,
+                  () => {
+                    budget.dispatchTool(bytes);
+                    trace?.toolDispatch();
+                    attempt = evidence?.toolDispatch(toolOrdinal);
+                    return holdPortResult(execute(input, task, portContext));
+                  }
+                );
+                const output = scope.checked(() =>
+                  checkPayload('INVALID_TOOL_OUTPUT', () => {
+                    const detached = snapshotJson(value, budget.payloadBytes);
+                    // Verify the shared loop can serialize this envelope without lossy text.
+                    JSON.stringify({ ok: true, output: detached.value });
+                    budget.chargePayload(detached.bytes);
+                    return detached.value;
+                  })
+                );
+                if (attempt !== undefined) evidence?.toolOutcome(attempt, toolOrdinal, 'returned');
+                return output;
+              } catch (cause) {
+                if (attempt !== undefined) {
+                  evidence?.toolOutcome(
+                    attempt,
+                    toolOrdinal,
+                    scope.signal.aborted ? 'interrupted' : 'failed'
+                  );
+                }
+                throw cause;
+              }
+            },
+          ])
+        );
+        const llm: ActorAgentLlmProvider = async (request, context) => {
+          const portContext = {
+            actorId: context.actorId,
+            nodeAddress: context.nodeAddress,
+            signal: scope.signal,
+          };
+          const normalized = scope.checked(() => {
+            budget.requireModelTurn();
+            return checkPayload('INVALID_MODEL_REQUEST', () =>
+              snapshotJson(normalizeRequest(request), budget.payloadBytes)
+            );
+          });
+          let attempt: number | undefined;
+          const started = performance.now();
+          let dispatched = false;
+          try {
+            const result = await scope.dispatch(
+              'PROVIDER_TIMEOUT',
+              config.limits.providerTimeoutMs,
+              async () => {
+                budget.dispatchModel(normalized.bytes);
+                attempt = evidence?.modelDispatch();
+                dispatched = true;
+                trace?.modelDispatch(normalized.value);
+                try {
+                  return await holdPortResult(config.provider(normalized.value, portContext));
+                } catch (cause) {
+                  // Preserve the shared registry's thrown-provider error, not budget errors.
+                  return holdValue({
+                    ok: false,
+                    error: {
+                      code: 'LLM_PROVIDER_FAILED',
+                      message: cause instanceof Error ? cause.message : String(cause),
+                      cause,
+                    },
+                  } satisfies ActorAgentLlmResult);
+                }
+              }
+            );
+            const step = scope.checked(() =>
+              normalizeProviderStep(result.value, config.limits.maxToolCallsPerBatch, budget)
+            );
+            if (attempt !== undefined) {
+              evidence?.modelOutcome(
+                attempt,
+                step.ok ? 'returned' : 'failed',
+                step.ok ? step.value.usage : undefined
+              );
+            }
+            if (trace) {
+              const usage = step.ok ? traceUsage(step.value.usage) : null;
+              trace.modelUsage(usage);
+              const durationMs = Math.max(0, performance.now() - started);
+              trace.emit(
+                step.ok
+                  ? {
+                      type: 'model.returned',
+                      ...trace.modelCall,
+                      durationMs,
+                      usage,
+                      message: trace.capture('model.message', {
+                        ...traceMessage(step.value.message),
+                        role: 'assistant' as const,
+                      }),
+                    }
+                  : {
+                      type: 'model.failed',
+                      ...trace.modelCall,
+                      durationMs,
+                      failure: { code: traceFailureCode(step.error, 'LLM_PROVIDER_FAILED') },
+                    }
+              );
+            }
+            return step;
+          } catch (cause) {
+            if (attempt !== undefined) {
+              evidence?.modelOutcome(attempt, scope.signal.aborted ? 'interrupted' : 'failed');
+            }
+            if (trace && dispatched) {
+              trace.modelUsage(null);
+              trace.emit({
+                type: 'model.failed',
+                ...trace.modelCall,
+                failure: { code: traceFailureCode(cause, 'LLM_PROVIDER_FAILED') },
+                durationMs: Math.max(0, performance.now() - started),
+              });
+            }
+            throw cause;
+          }
+        };
+        scope.check();
+        startAttempted = true;
+        evidence?.beginSession(topology.actors.specialist.address);
+        if (trace) {
+          try {
+            const identity = evidence?.read()?.trace;
+            trace.bindActor(
+              topology.actors.specialist.address,
+              identity
+                ? {
+                    traceId: identity.traceId,
+                    sessionId: identity.sessionId,
+                    commandId: identity.commandId,
+                  }
+                : undefined
+            );
+          } catch {
+            trace.captureFailed();
+          }
+        }
+        const startOwned = () => startRuntime(topology, { tools: { ...applicationTools, llm } });
+        let host: Awaited<ReturnType<typeof startOwned>>;
+        try {
+          host = await startOwned();
+        } catch (cause) {
+          // A failed start does not give us a runtime handle to verify closure.
+          unconfirmed = 'runtime-start-failed';
+          throw new AgentRunnerError(
+            'RUNTIME_START_FAILED',
+            'Could not start the local runtime.',
+            cause
+          );
+        }
+        let outcome: { ok: true; text: string } | { ok: false; error: unknown };
+        try {
+          scope.check();
+          const specialist = host.requireActor('specialist');
+          const toolbox = createActorToolbox(
+            applicationTools,
+            { actorId: topology.actors.specialist.address, nodeAddress: localNode },
+            [...implementations.keys()]
+          );
+          const ask = (message: ActorAgentLoopMessage) =>
+            scope.dispatch('ACTOR_ASK_FAILED', config.limits.askTimeoutMs, () =>
+              specialist.ask<ActorAgentLoopReply>(message, config.limits.askTimeoutMs)
+            );
+          const text = await scope.wait(
+            driveLoop(
+              ask,
+              toolbox,
+              implementations,
+              scope,
+              budget,
+              task,
+              prompt,
+              config.systemPrompt,
+              trace
+            )
+          );
+          outcome = { ok: true, text };
+        } catch (error) {
+          outcome = { ok: false, error };
+        }
+        try {
+          evidence?.cleanupStarted();
+          await host.stop();
+        } catch (cause) {
+          unconfirmed = 'runtime-stop-failed';
+          // Retain a primary rejection, but do not admit another run.
+          if (outcome.ok) {
+            outcome = {
+              ok: false,
+              error: new AgentRunnerError(
+                'RUNTIME_STOP_FAILED',
+                'Could not close the local runtime.',
+                cause
+              ),
+            };
+          }
+        } finally {
+          await scope.drain();
+        }
+        if (!outcome.ok) throw outcome.error;
+        return outcome.text;
+      };
+      const managed = runOwned().finally(() => {
+        if (startAttempted) evidence?.cleanupOutcome(unconfirmed);
+        if (unconfirmed) {
+          observation?.publish({ status: 'unresolved', reason: unconfirmed });
+        } else {
+          active = false;
+          observation?.publish({ status: startAttempted ? 'settled' : 'not-admitted' });
+        }
+      });
+      try {
+        return await scope.wait(managed);
+      } finally {
+        try {
+          scope.check();
+        } finally {
+          scope.dispose();
+        }
+      }
+    },
+  };
+  function start(request: AgentRunRequest<Task, Purpose>): AgentRunHandle;
+  function start(
+    request: AgentRunRequest<Task, Purpose>,
+    binding: AgentRunEvidenceBinding
+  ): ObservedAgentRunHandle;
+  function start(
+    request: AgentRunRequest<Task, Purpose>,
+    binding?: AgentRunEvidenceBinding
+  ): AgentRunHandle {
+    const { finish, waitForSettlement } = createSettlementObserver();
+    const evidence = binding === undefined ? undefined : bindEvidence(binding);
+    const trace = config.trace ? createRunTrace(config.trace) : undefined;
+    const observation = {
+      publish: finish,
+      evidence,
+      trace,
+      signal: undefined as AbortSignal | undefined,
+    };
+    const result = runner.run(request, observation).then(
+      (raw) => {
+        trace?.emit({ type: 'run.completed', output: trace.capture('output', raw) });
+        return raw;
+      },
+      (cause: unknown) => {
+        const code = traceFailureCode(cause, 'RUN_FAILED');
+        trace?.emit(
+          code === 'RUN_ABORTED'
+            ? { type: 'run.cancelled', code }
+            : { type: 'run.failed', failure: { code } }
+        );
+        throw cause;
+      }
+    );
+    // A host may observe cleanup before awaiting the already-rejected caller result.
+    void result.catch(() => {});
+    const readTrace = () => trace?.read();
+    if (!evidence) return { result, waitForSettlement, readTrace };
+    let requested = false;
+    const handle: ObservedAgentRunHandle = {
+      result,
+      waitForSettlement,
+      readTrace,
+      readEvidence: () => evidence.read(),
+      async validateOutput(parse, validator = { id: 'host-output', revision: 'unversioned' }) {
+        if (requested) {
+          throw new AgentRunnerError(
+            'VALIDATION_ALREADY_REQUESTED',
+            'Output validation was already requested for this invocation.'
+          );
+        }
+        requested = true;
+        const raw = await result;
+        const signal = observation.signal;
+        signal?.throwIfAborted();
+        try {
+          const content = await parse(raw);
+          signal?.throwIfAborted();
+          evidence.validation('passed');
+          trace?.emit({
+            type: 'output.validated',
+            modelCallId: trace.modelCall.modelCallId,
+            validator,
+            outcome: 'passed',
+            output: trace.capture('output', content as JsonValue),
+          });
+          return content;
+        } catch (cause) {
+          evidence.validation(signal?.aborted ? 'interrupted' : 'failed');
+          trace?.emit({
+            type: 'output.validated',
+            modelCallId: trace.modelCall.modelCallId,
+            validator,
+            outcome: 'failed',
+            failure: {
+              code: traceFailureCode(cause, signal?.aborted ? 'RUN_ABORTED' : 'OUTPUT_INVALID'),
+            },
+          });
+          throw cause;
+        }
+      },
+    };
+    return handle;
+  }
+  return { run: (request) => start(request).result, start };
+}

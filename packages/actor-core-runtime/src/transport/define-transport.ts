@@ -1,4 +1,4 @@
-// Imperative shell (composition root, behaviorBoundaries.shell). The public authoring
+// Imperative shell (composition root, execution boundary). The public authoring
 // surface: wires an author medium -> fromDuplex/PeerLink -> TransportCore into a
 // MessageTransport factory. No reliability logic of its own — every concern lives in
 // TransportCore.

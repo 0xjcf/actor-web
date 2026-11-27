@@ -1,0 +1,17 @@
+{
+  "name": "@actor-web/example-retail-investigation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit --module node16 --target es2022 --strict --skipLibCheck demo.ts && tsup demo.ts --format esm --platform node --out-dir dist",
+    "demo": "pnpm build && node dist/demo.js",
+    "evaluate": "pnpm build && node dist/demo.js --compare",
+    "live": "pnpm build && node --env-file=../../.env.local dist/demo.js --live",
+    "evaluate:live": "pnpm build && node --env-file=../../.env.local dist/demo.js --compare --live"
+  },
+  "dependencies": {
+    "@actor-web/agent": "workspace:*",
+    "@actor-web/runtime": "workspace:*",
+    "zod": "4.6.7"
+  }
+}

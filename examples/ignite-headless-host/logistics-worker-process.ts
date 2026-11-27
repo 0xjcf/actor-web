@@ -5,7 +5,7 @@ import {
   createRuntimeTransportTelemetryJsonlFileSink,
   createStaticRuntimePeerDiscoveryProvider,
   type RuntimeTransportTelemetryExporter,
-  type ServedActorWebNode,
+  type ServedNode,
   serveNode,
 } from '@actor-web/runtime/node';
 import { logistics } from './logistics-topology';
@@ -41,7 +41,7 @@ function resolveServerTransportUrl(): string {
   return `ws://${host}:${port}`;
 }
 
-async function stopWorker(worker: ServedActorWebNode<typeof logistics>): Promise<void> {
+async function stopWorker(worker: ServedNode<typeof logistics>): Promise<void> {
   await worker.stop();
 }
 

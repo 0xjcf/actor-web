@@ -100,7 +100,7 @@ exist. It owns no domain logic.
 
 The boundary between the planes is a small, explicit handoff:
 
-1. **Topology** — a `defineActorWebTopology({ actors, supervisors, subscriptions })`
+1. **Topology** — a `defineTopology({ actors, supervisors, subscriptions })`
    value (file or generated). Declares which agents exist, how they are
    supervised, and which events flow between them.
 2. **Behaviors** — `defineBehavior().withMachine()/.withFSM()` modules. Each
@@ -252,7 +252,7 @@ actor-web connect ./topology.ts ws://host:port [--token gateway-secret]
 `serve` hosts; the other verbs are a client that talks to either an in-process
 system or a remote node over the gateway. All of these map directly to existing
 runtime calls (`serveNode`, `system.lookup`, `spawn`, `send`/`ask`,
-`subscribeEvent`, `createActorWebClient`).
+`subscribeEvent`, `createClient`).
 
 ### Current implementation slice
 

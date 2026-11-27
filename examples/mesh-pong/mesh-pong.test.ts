@@ -7,10 +7,10 @@ import {
   type ActorAgentLlmResult,
   createActorAgentTools,
 } from '@actor-web/agent';
-import { type ActorMessage, type ActorRef, createActorSource } from '@actor-web/runtime';
+import { type ActorMessage, type ActorRef, ask, createActorSource } from '@actor-web/runtime';
 import type { ActorToolExecutionContext, BroadcastChannelLike } from '@actor-web/runtime/browser';
 import { createActorToolbox } from '@actor-web/runtime/browser';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
   createBrowserMlxLlmProvider,
   resolveBrowserMlxProviderConfig,
@@ -22,8 +22,8 @@ import {
   createMeshPongWebSocketDevHelperClient,
   describeMeshPongWebSocketStatus,
   startMeshPongBrowserWebSocketClient,
-  startMeshPongWebSocketLoopback,
 } from './modes/websocket';
+import { startMeshPongWebSocketLoopback } from './modes/websocket-host';
 import {
   MESH_PONG_MODE_PARITY_PROOF,
   MESH_PONG_SHARED_PARITY_PROOF,
@@ -466,7 +466,7 @@ async function resolveSessionRefs(runtime: StartedMeshPongRuntime): Promise<Mesh
 async function currentMatchState(
   matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>
 ): Promise<PongMatchState> {
-  return matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' });
+  return ask(matchCoordinator, { type: 'GET_MATCH' });
 }
 
 async function syncCoordinatorSession(
@@ -474,7 +474,7 @@ async function syncCoordinatorSession(
   session: ActorRef<PongPlayerSessionState, PlayerSessionCommand>
 ): Promise<void> {
   const state = await session.ask<PongPlayerSessionState>({ type: 'GET_SESSION' });
-  const result = await matchCoordinator.ask<PongMatchCommandResult>({
+  const result = await ask(matchCoordinator, {
     type: 'SYNC_SESSION',
     requestSessionId: state.sessionId,
     session: state,
@@ -930,6 +930,32 @@ function createTurnStepperHarness(
 }
 
 describe('Mesh Pong transport parity', () => {
+  it('infers query and mutation replies from the topology’s match coordinator', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const server = runtime.nodes.server;
+    if (!server) throw new Error('Expected the local server node.');
+    const coordinator = server.requireActor('matchCoordinator');
+    const match = await ask(coordinator, { type: 'GET_MATCH' });
+    expectTypeOf(match).toEqualTypeOf<PongMatchState>();
+    const result = await ask(coordinator, {
+      type: 'TICK_MATCH',
+      requestSessionId: 'reader',
+      expectedGeneration: match.generation,
+    });
+    expectTypeOf(result).toEqualTypeOf<PongMatchCommandResult>();
+    expect(result.ok).toBe(false);
+
+    // Type-only checks: do not dispatch these malformed requests.
+    // @ts-expect-error Player-session commands do not belong to the match coordinator.
+    expectTypeOf(() => ask(coordinator, { type: 'GET_SESSION' }));
+    // @ts-expect-error A tick requires the caller's session and expected generation.
+    expectTypeOf(() => ask(coordinator, { type: 'TICK_MATCH' }));
+    // @ts-expect-error Unannotated actors do not promise any typed replies.
+    expectTypeOf(() => ask(server.requireActor('room'), { type: 'GET_ROOM' }));
+    expectTypeOf(match).not.toEqualTypeOf<PongMatchCommandResult>();
+  });
+
   it('derives cross-tab epoch timestamps from a shared clock source', () => {
     const clock = createMeshPongClock({
       timeOrigin: 1_000,
@@ -4434,12 +4460,14 @@ describe('Mesh Pong transport parity', () => {
   });
 
   it('starts one websocket host and gives browser sessions unique client nodes without a provisioning route', async () => {
-    const [websocketMode, viteConfig] = await Promise.all([
+    const [websocketMode, websocketHost, viteConfig] = await Promise.all([
       readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/modes/websocket.ts'), 'utf8'),
+      readFile(path.resolve(meshPongExamplesDir, 'mesh-pong/modes/websocket-host.ts'), 'utf8'),
       readFile(path.resolve(meshPongExamplesDir, 'vite.config.ts'), 'utf8'),
     ]);
 
-    expect(websocketMode).toContain('startMeshPongWebSocketHost');
+    expect(websocketHost).toContain('startMeshPongWebSocketHost');
+    expect(viteConfig).toContain("ssrLoadModule('/mesh-pong/modes/websocket-host.ts')");
     expect(websocketMode).toContain('startMeshPongBrowserWebSocketClient');
     expect(websocketMode).toContain('clientNodeAddress');
     expect(websocketMode).not.toContain('ensurePlayerSession');
@@ -4903,8 +4931,8 @@ describe('Mesh Pong transport parity', () => {
 
     expect(agentEntrypoint).toContain("from '@actor-web/runtime/browser'");
     expect(agentEntrypoint).not.toContain("import { defineBehavior } from '@actor-web/runtime';");
-    expect(websocketMode).not.toContain("import { serveNode } from '@actor-web/runtime/node'");
-    expect(websocketMode).toContain("await import('@actor-web/runtime/node')");
+    expect(websocketMode).not.toContain('@actor-web/runtime/node');
+    expect(websocketMode).not.toContain('websocket-host');
   });
 
   it('bounds browser startup waits so the UI can leave the starting state on hangs', async () => {
@@ -5167,11 +5195,11 @@ describe('Mesh Pong transport parity', () => {
   it('retries websocket helper startup after a transient status failure', async () => {
     const viteConfig = await readFile(path.resolve(meshPongExamplesDir, 'vite.config.ts'), 'utf8');
     const statusSection = viteConfig.slice(
-      viteConfig.indexOf('async function meshPongWebSocketStatus()'),
+      viteConfig.indexOf('async function meshPongWebSocketStatus('),
       viteConfig.indexOf("name: 'mesh-pong-websocket-helper'")
     );
 
-    expect(statusSection).toContain('await ensureMeshPongWebSocketServer()');
+    expect(statusSection).toContain('await ensureMeshPongWebSocketServer(server)');
     expect(statusSection).not.toContain(
       'if (meshPongWebSocketServerFailure && !meshPongWebSocketServer)'
     );

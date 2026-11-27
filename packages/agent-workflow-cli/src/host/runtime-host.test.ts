@@ -16,8 +16,8 @@ import {
   type AgentExecutionIdempotencySettlementOutcome,
   actor,
   createInMemoryAgentSessionCheckpointStore,
-  defineActorWebTopology,
   defineBehavior,
+  defineTopology,
   enableDevModeForCLI,
   node,
   type ProjectionTransportStatus,
@@ -49,7 +49,7 @@ function buildCounterTopology() {
     })
     .build();
 
-  return defineActorWebTopology({
+  return defineTopology({
     nodes: { local: node('local') },
     actors: { counter: actor({ id: 'counter', node: 'local', behavior: counter }) },
   });
@@ -70,7 +70,7 @@ function buildDistributedCounterTopology() {
     })
     .build();
 
-  return defineActorWebTopology({
+  return defineTopology({
     nodes: {
       server: node('server-node'),
       worker: node('worker-node'),
@@ -83,7 +83,7 @@ function buildDistributedCounterTopology() {
 }
 
 type AgentPackage = {
-  readonly ACTOR_WEB_LLM_TOOL_NAME: 'llm';
+  readonly LLM_TOOL_NAME: 'llm';
   createAgentLoopBehavior(options?: { readonly system?: string }): unknown;
 };
 
@@ -99,7 +99,7 @@ function buildAgentLoopTopology(input: {
   readonly agentPackage: AgentPackage;
   readonly grantLlm: boolean;
 }) {
-  return defineActorWebTopology({
+  return defineTopology({
     nodes: { local: node('local') },
     actors: {
       agent: actor({
@@ -108,7 +108,7 @@ function buildAgentLoopTopology(input: {
         behavior: input.agentPackage.createAgentLoopBehavior({
           system: 'You are a runtime-hosted agent.',
         }),
-        tools: input.grantLlm ? [input.agentPackage.ACTOR_WEB_LLM_TOOL_NAME] : [],
+        tools: input.grantLlm ? [input.agentPackage.LLM_TOOL_NAME] : [],
       }),
     },
   });
@@ -619,8 +619,8 @@ describe('createRuntimeHost', () => {
         await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
       return {
         ...actual,
-        createActorWebSource: () => commandSource,
-        createActorWebTraceSource: () => traceSource,
+        createGatewaySource: () => commandSource,
+        createGatewayTraceSource: () => traceSource,
       };
     });
 
@@ -695,7 +695,7 @@ describe('createRuntimeHost', () => {
   it('lists remote actors from topology/cache state without opening remote sources', async () => {
     vi.resetModules();
 
-    const createActorWebSource = vi.fn(() => {
+    const createGatewaySource = vi.fn(() => {
       throw new Error('remote source should stay unopened during listActors');
     });
 
@@ -704,7 +704,7 @@ describe('createRuntimeHost', () => {
         await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
       return {
         ...actual,
-        createActorWebSource,
+        createGatewaySource,
       };
     });
 
@@ -724,7 +724,7 @@ describe('createRuntimeHost', () => {
 
     const actors = await remoteHost.value.listActors();
 
-    expect(createActorWebSource).not.toHaveBeenCalled();
+    expect(createGatewaySource).not.toHaveBeenCalled();
     expect(actors).toEqual([
       {
         key: 'counter',
@@ -776,7 +776,7 @@ describe('createRuntimeHost', () => {
         await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
       return {
         ...actual,
-        createActorWebSource: () => commandSource,
+        createGatewaySource: () => commandSource,
       };
     });
 
@@ -866,8 +866,8 @@ describe('createRuntimeHost', () => {
         await vi.importActual<typeof import('@actor-web/runtime')>('@actor-web/runtime');
       return {
         ...actual,
-        createActorWebSource: () => commandSource,
-        createActorWebTraceSource: () => traceSource,
+        createGatewaySource: () => commandSource,
+        createGatewayTraceSource: () => traceSource,
       };
     });
 
@@ -952,7 +952,7 @@ describe('createRuntimeHost', () => {
       {
         nodes: {},
         actors: {},
-      } as ReturnType<typeof defineActorWebTopology>,
+      } as ReturnType<typeof defineTopology>,
       {}
     );
 
@@ -1564,7 +1564,7 @@ describe('createRuntimeHost', () => {
       .build();
     const dispatchSettlements: AgentExecutionIdempotencySettlementOutcome[] = [];
     const dispatchBlocked = await createRuntimeHost(
-      defineActorWebTopology({
+      defineTopology({
         nodes: { local: node('local') },
         actors: { counter: actor({ id: 'counter', node: 'local', behavior: throwingBehavior }) },
       }),
@@ -1698,7 +1698,7 @@ describe('createRuntimeHost', () => {
       })
       .build();
     const started = await createRuntimeHost(
-      defineActorWebTopology({
+      defineTopology({
         nodes: { local: node('local') },
         actors: { counter: actor({ id: 'counter', node: 'local', behavior: overlapBehavior }) },
       }),

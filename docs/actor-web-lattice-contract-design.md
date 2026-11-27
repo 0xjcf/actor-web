@@ -213,7 +213,7 @@ const plannerBehavior = defineBehavior<PlannerMessage>()
   .onMessage(() => ({ context: { planned: true } }))
   .build();
 
-defineActorWebTopology({
+defineTopology({
   nodes: { local: node("local") },
   actors: {
     workspace: lattice({ id: "workflow-lattice", node: "local" }),

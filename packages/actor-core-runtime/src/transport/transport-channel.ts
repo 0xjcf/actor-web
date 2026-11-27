@@ -1,5 +1,5 @@
-// Functional core (no I/O, no clock, no timers, no shell imports — machine-enforced via
-// .fas-config.json behaviorBoundaries.functionalCore). This module owns the adapter
+// Functional core (no I/O, no clock, no timers, no shell imports — checked via
+// architecture.boundaries.json deterministicDecision). This module owns the adapter
 // CONTRACT a new transport implements (TransportChannel / PeerLink) plus the pure
 // safeDispatchListener isolation helper. Types are contracts, not implementations; the
 // only runtime export is a pure function whose sole effect is the injected onError.

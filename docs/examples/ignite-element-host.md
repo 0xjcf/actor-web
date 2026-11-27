@@ -185,15 +185,15 @@ command API and choose the right Actor-Web source value for `source`.
 For deployed gateway-backed pages, use the shipment read-model source as
 `source` for read-only views, or use `logistics.actors.shipment.source({ gateway })`
 as `source` when both projection and commands are required. Generic browser
-clients can still use `createActorWebReadModelClient(...)` or `.readModel(...)`
+clients can still use `createReadModelClient(...)` or `.readModel(...)`
 where no Ignite command surface is required.
 
 `server-runtime-gateway.ts` starts the server node with `serveNode` and
-uses `serveActorWebHttp(runtime).for(logistics.actors.shipment)` for REST
+uses `serveHttp(runtime).for(logistics.actors.shipment)` for REST
 ingress routes. `worker-websocket-runtime.ts` starts the WebWorker runtime node
-with `startActorWebNode` and the browser runtime transport options.
+with `startNode` and the browser runtime transport options.
 `worker-runtime.ts` starts the Service Worker proof node with the same
-`startActorWebNode` API and a `createMessagePortTransport` adapter, so
+`startNode` API and a `createMessagePortTransport` adapter, so
 service-worker ownership remains part of the shared topology while
 service-worker registration stays in the example browser shell.
 

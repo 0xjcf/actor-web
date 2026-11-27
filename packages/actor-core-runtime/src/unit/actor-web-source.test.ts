@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  type ActorWebGatewaySocket,
-  createActorWebCommandSource,
-  createActorWebReadModelSource,
-  createActorWebSource,
-  createActorWebTraceSource,
+  createGatewayCommandSource,
+  createGatewayReadModelSource,
+  createGatewaySource,
+  createGatewayTraceSource,
+  type GatewaySocket,
 } from '../actor-web-source.js';
 import type { RuntimeGatewayClientFrame, RuntimeGatewayServerFrame } from '../runtime-gateway.js';
 
-class FakeGatewaySocket implements ActorWebGatewaySocket {
+class FakeGatewaySocket implements GatewaySocket {
   readonly readyState = 1;
   readonly sentFrames: RuntimeGatewayClientFrame[] = [];
   closeCalls = 0;
@@ -55,10 +55,10 @@ class FakeGatewaySocket implements ActorWebGatewaySocket {
   }
 }
 
-describe('createActorWebSource', () => {
+describe('createGatewaySource', () => {
   it('subscribes to a runtime gateway and exposes snapshots, events, send, and ask', async () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebSource(
+    const source = createGatewaySource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -191,7 +191,7 @@ describe('createActorWebSource', () => {
 
   it('forwards optional command metadata without making the client principal authoritative', async () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebCommandSource(
+    const source = createGatewayCommandSource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -306,7 +306,7 @@ describe('createActorWebSource', () => {
 
   it('keeps browser read-model sources command-free unless the host opts in', async () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebReadModelSource(
+    const source = createGatewayReadModelSource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -319,7 +319,7 @@ describe('createActorWebSource', () => {
         streamId: 'shipment-stream',
       }
     );
-    const commandSource = createActorWebCommandSource(
+    const commandSource = createGatewayCommandSource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -345,7 +345,7 @@ describe('createActorWebSource', () => {
   it('keeps read-model subscriptions full while explicit command sources opt into command-only', async () => {
     const readModelSocket = new FakeGatewaySocket();
     const commandSocket = new FakeGatewaySocket();
-    const readModel = createActorWebReadModelSource(
+    const readModel = createGatewayReadModelSource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -358,7 +358,7 @@ describe('createActorWebSource', () => {
         streamId: 'shipment-read-model',
       }
     );
-    const commandSource = createActorWebCommandSource(
+    const commandSource = createGatewayCommandSource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -418,7 +418,7 @@ describe('createActorWebSource', () => {
 
   it('sends gateway auth on the hello frame without requiring custom source glue', async () => {
     const socket = new FakeGatewaySocket();
-    createActorWebSource(
+    createGatewaySource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -449,7 +449,7 @@ describe('createActorWebSource', () => {
 
   it('merges address-based source params into the gateway scope', () => {
     const socket = new FakeGatewaySocket();
-    createActorWebSource(
+    createGatewaySource(
       {
         address: 'actor://server-node/vehicle-inspections',
         gateway: {
@@ -491,7 +491,7 @@ describe('createActorWebSource', () => {
 
   it('defaults address-based source scope kind from the actor id', () => {
     const socket = new FakeGatewaySocket();
-    createActorWebSource(
+    createGatewaySource(
       {
         address: 'actor://server-node/vehicle-inspections',
         gateway: {
@@ -523,7 +523,7 @@ describe('createActorWebSource', () => {
 
   it('requests resync when gateway stream sequence gaps are detected', async () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebSource(
+    const source = createGatewaySource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -630,7 +630,7 @@ describe('createActorWebSource', () => {
 
   it('contains snapshot listener failures so later listeners still receive updates', () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebSource(
+    const source = createGatewaySource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -689,7 +689,7 @@ describe('createActorWebSource', () => {
 
   it('contains event listener failures so later listeners still receive updates', () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebSource(
+    const source = createGatewaySource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -769,7 +769,7 @@ describe('createActorWebSource', () => {
 
   it('contains transport status listener failures so later listeners still receive updates', () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebCommandSource(
+    const source = createGatewayCommandSource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -814,7 +814,7 @@ describe('createActorWebSource', () => {
 
   it('correlates concurrent sends by request id and falls back for legacy ack/error frames', async () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebCommandSource(
+    const source = createGatewayCommandSource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -919,7 +919,7 @@ describe('createActorWebSource', () => {
 
   it('subscribes to trace-only gateway streams and requests resync on sequence gaps', () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebTraceSource(
+    const source = createGatewayTraceSource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -1049,7 +1049,7 @@ describe('createActorWebSource', () => {
     try {
       const sockets = [new FakeGatewaySocket(), new FakeGatewaySocket(), new FakeGatewaySocket()];
       let socketIndex = 0;
-      const source = createActorWebTraceSource(
+      const source = createGatewayTraceSource(
         {
           address: 'actor://server-node/shipment',
           gateway: {
@@ -1180,7 +1180,7 @@ describe('createActorWebSource', () => {
         new FakeGatewaySocket(),
       ];
       let socketIndex = 0;
-      const source = createActorWebTraceSource(
+      const source = createGatewayTraceSource(
         {
           address: 'actor://server-node/shipment',
           gateway: {
@@ -1228,7 +1228,7 @@ describe('createActorWebSource', () => {
 
   it('degrades read-model sources when gateway auth resolution rejects before hello', async () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebSource(
+    const source = createGatewaySource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -1265,7 +1265,7 @@ describe('createActorWebSource', () => {
 
   it('recovers pending readiness and commands after a malformed gateway frame', async () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebSource(
+    const source = createGatewaySource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -1334,7 +1334,7 @@ describe('createActorWebSource', () => {
 
   it('degrades trace-only sources when gateway auth resolution rejects before hello', async () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebTraceSource(
+    const source = createGatewayTraceSource(
       {
         address: 'actor://server-node/shipment',
         gateway: {
@@ -1370,7 +1370,7 @@ describe('createActorWebSource', () => {
 
   it('degrades trace-only sources when the gateway sends malformed JSON', () => {
     const socket = new FakeGatewaySocket();
-    const source = createActorWebTraceSource(
+    const source = createGatewayTraceSource(
       {
         address: 'actor://server-node/shipment',
         gateway: {

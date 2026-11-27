@@ -158,6 +158,8 @@ describe('FallbackContextStorage', () => {
       events.push('first-finished');
     });
 
+    await Promise.resolve();
+    expect(events).toEqual(['first-started']);
     const secondPending = storage.runAsync(second, async () => {
       events.push('second-started');
       expect(storage.getStore()).toEqual(second);
@@ -186,6 +188,78 @@ describe('FallbackContextStorage', () => {
       'second-started',
       'second-finished',
     ]);
+    expect(storage.getStore()).toBeUndefined();
+  });
+
+  it('serializes sibling requests and treats a finished parent as an ordinary caller', async () => {
+    const storage = new FallbackContextStorage<ActorContext>();
+    const parent = createContext('parent');
+    const events: string[] = [];
+    const child = (id: string) =>
+      storage.runAsync(
+        createContext(id),
+        async () => {
+          events.push(`${id}:start`);
+          await Promise.resolve();
+          expect(storage.getStore()?.actorId).toBe(id);
+          events.push(`${id}:end`);
+        },
+        parent
+      );
+    await storage.runAsync(parent, async () => {
+      await Promise.all([child('one'), child('two')]);
+      expect(storage.getStore()).toBe(parent);
+    });
+    let stale!: Promise<void>;
+    await storage.runAsync(createContext('unrelated'), async () => {
+      stale = child('stale');
+      await Promise.resolve();
+      expect(storage.getStore()?.actorId).toBe('unrelated');
+      events.push('unrelated:end');
+    });
+    await stale;
+    expect(events).toEqual([
+      'one:start',
+      'one:end',
+      'two:start',
+      'two:end',
+      'unrelated:end',
+      'stale:start',
+      'stale:end',
+    ]);
+  });
+
+  it('runs a nested ask while the caller is still awaiting the reply', async () => {
+    const storage = new FallbackContextStorage<ActorContext>();
+    const outer = createContext('outer-actor');
+    const inner = createContext('inner-actor');
+    const askInner = () =>
+      storage.runAsync(
+        inner,
+        async () => {
+          expect(storage.getStore()).toEqual(inner);
+          await Promise.resolve();
+          expect(storage.getStore()).toEqual(inner);
+          return 'inner-done';
+        },
+        outer
+      );
+
+    const pending = storage.runAsync(outer, async () => {
+      expect(storage.getStore()).toEqual(outer);
+      const reply = await askInner();
+      expect(storage.getStore()).toEqual(outer);
+      return reply;
+    });
+
+    await expect(
+      Promise.race([
+        pending,
+        new Promise<string>((_resolve, reject) => {
+          setTimeout(() => reject(new Error('nested ask did not return')), 1000);
+        }),
+      ])
+    ).resolves.toBe('inner-done');
     expect(storage.getStore()).toBeUndefined();
   });
 });

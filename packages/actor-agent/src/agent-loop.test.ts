@@ -25,7 +25,7 @@ type AgentLoopBehaviorHarness = {
 };
 
 type AgentModule = {
-  readonly ACTOR_WEB_LLM_TOOL_NAME: 'llm';
+  readonly LLM_TOOL_NAME: 'llm';
   createActorAgentToolRegistry(input: {
     readonly llm: ActorAgentLlmProvider;
   }): Record<string, (...args: readonly unknown[]) => unknown>;
@@ -147,10 +147,10 @@ describe('@actor-web/agent llm tool', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
-    const result = await tools.execute(agent.ACTOR_WEB_LLM_TOOL_NAME, {
+    const result = await tools.execute(agent.LLM_TOOL_NAME, {
       system: 'Plan safely.',
       messages: [{ role: 'user', content: 'ship v1' }],
       tools: [],
@@ -214,7 +214,7 @@ describe('@actor-web/agent loop behavior', () => {
         'repo.diff': () => ({ ok: true, diff: 'changed files' }),
       },
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff']
+      [agent.LLM_TOOL_NAME, 'repo.diff']
     );
 
     const result = await behavior.onMessage?.(
@@ -275,6 +275,62 @@ describe('@actor-web/agent loop behavior', () => {
     });
   });
 
+  it('replaces session history when START_AGENT sets reset', async () => {
+    const agent = await loadAgentModule();
+    expect(agent).not.toBeNull();
+    if (!agent) {
+      return;
+    }
+    const provider = vi.fn<ActorAgentLlmProvider>(() => ({
+      ok: true,
+      value: {
+        message: {
+          role: 'assistant',
+          content: 'ready',
+        },
+      },
+    }));
+    const behavior = agent.createAgentLoopBehavior({ system: 'You are a planner.' });
+    const tools = createActorToolbox(
+      agent.createActorAgentToolRegistry({ llm: provider }),
+      actorToolContext,
+      [agent.LLM_TOOL_NAME]
+    );
+    const started = await behavior.onMessage?.(
+      createAgentParams({
+        behavior,
+        tools,
+        message: { type: 'START_AGENT', prompt: 'plan task-1' },
+      })
+    );
+    const startedContext = readAgentLoopContext(started);
+    const continued = await behavior.onMessage?.({
+      message: { type: 'START_AGENT', prompt: 'plan task-2' },
+      context: startedContext,
+      actor: { getSnapshot: () => ({ context: startedContext }) },
+      tools,
+    });
+    const continuedContext = readAgentLoopContext(continued);
+    await behavior.onMessage?.({
+      message: { type: 'START_AGENT', prompt: 'plan task-3', reset: true },
+      context: continuedContext,
+      actor: { getSnapshot: () => ({ context: continuedContext }) },
+      tools,
+    });
+
+    expect(provider).toHaveBeenCalledTimes(3);
+    expect(provider.mock.calls[1]?.[0]).toMatchObject({
+      messages: [
+        { role: 'user', content: 'plan task-1' },
+        { role: 'assistant', content: 'ready' },
+        { role: 'user', content: 'plan task-2' },
+      ],
+    });
+    expect(provider.mock.calls[2]?.[0]).toMatchObject({
+      messages: [{ role: 'user', content: 'plan task-3' }],
+    });
+  });
+
   it('passes authorized tool definitions through to the llm request while preserving tool names', async () => {
     const agent = await loadAgentModule();
     expect(agent).not.toBeNull();
@@ -316,7 +372,7 @@ describe('@actor-web/agent loop behavior', () => {
         'repo.diff': () => ({ ok: true, diff: 'changed files' }),
       },
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff']
+      [agent.LLM_TOOL_NAME, 'repo.diff']
     );
 
     await behavior.onMessage?.(
@@ -500,7 +556,7 @@ describe('@actor-web/agent loop behavior', () => {
         'repo.diff': () => ({ ok: true, diff: 'changed files' }),
       },
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff']
+      [agent.LLM_TOOL_NAME, 'repo.diff']
     );
 
     const started = await firstBehavior.onMessage?.(
@@ -648,7 +704,7 @@ describe('@actor-web/agent loop behavior', () => {
         'repo.diff': () => ({ ok: true, diff: 'changed files' }),
       },
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff']
+      [agent.LLM_TOOL_NAME, 'repo.diff']
     );
 
     const resumed = await resumedBehavior.onMessage?.({
@@ -743,7 +799,7 @@ describe('@actor-web/agent loop behavior', () => {
     const blockedTools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: blockedProvider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const blocked = await blockedBehavior.onMessage?.(
@@ -810,7 +866,7 @@ describe('@actor-web/agent loop behavior', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const result = await behavior.onMessage?.(
@@ -865,7 +921,7 @@ describe('@actor-web/agent loop behavior', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const result = await behavior.onMessage?.(
@@ -912,7 +968,7 @@ describe('@actor-web/agent loop behavior', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const first = await behavior.onMessage?.(
@@ -992,7 +1048,7 @@ describe('@actor-web/agent loop behavior', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const failed = await behavior.onMessage?.(
@@ -1091,7 +1147,7 @@ describe('@actor-web/agent loop behavior', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const result = await behavior.onMessage?.(
@@ -1152,7 +1208,7 @@ describe('@actor-web/agent loop behavior', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const result = await behavior.onMessage?.(
@@ -1214,7 +1270,7 @@ describe('@actor-web/agent loop behavior', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const result = await behavior.onMessage?.(
@@ -1277,7 +1333,7 @@ describe('@actor-web/agent loop behavior', () => {
         }),
       }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     await behavior.onMessage?.(
@@ -1370,7 +1426,7 @@ describe('@actor-web/agent loop behavior', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const blocked = await behavior.onMessage?.(
@@ -1508,7 +1564,7 @@ describe('@actor-web/agent loop behavior', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const blocked = await behavior.onMessage?.(
@@ -1579,7 +1635,7 @@ describe('@actor-web/agent loop behavior', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const blocked = await behavior.onMessage?.(
@@ -1657,7 +1713,7 @@ describe('@actor-web/agent loop behavior', () => {
         }),
       }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const result = await behavior.onMessage?.(
@@ -1732,7 +1788,7 @@ describe('@actor-web/agent loop behavior', () => {
         'repo.status': () => ({ ok: true, clean: false }),
       },
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff', 'repo.status']
+      [agent.LLM_TOOL_NAME, 'repo.diff', 'repo.status']
     );
 
     const started = await behavior.onMessage?.({
@@ -1851,7 +1907,7 @@ describe('@actor-web/agent loop behavior', () => {
         'repo.status': () => ({ ok: true, clean: false }),
       },
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff', 'repo.status']
+      [agent.LLM_TOOL_NAME, 'repo.diff', 'repo.status']
     );
 
     const started = await behavior.onMessage?.(
@@ -1964,7 +2020,7 @@ describe('@actor-web/agent loop behavior', () => {
     const tools = createActorToolbox(
       agent.createActorAgentToolRegistry({ llm: provider }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const reconciled = await behavior.onMessage?.(
@@ -2105,7 +2161,7 @@ describe('@actor-web/agent loop behavior', () => {
         }),
       }),
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME]
+      [agent.LLM_TOOL_NAME]
     );
 
     const result = await behavior.onMessage?.(
@@ -2173,7 +2229,7 @@ describe('@actor-web/agent loop behavior', () => {
         'repo.diff': () => ({ ok: false, error: 'tool execution failed' }),
       },
       actorToolContext,
-      [agent.ACTOR_WEB_LLM_TOOL_NAME, 'repo.diff']
+      [agent.LLM_TOOL_NAME, 'repo.diff']
     );
 
     const started = await behavior.onMessage?.({

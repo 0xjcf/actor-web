@@ -80,7 +80,7 @@ as data at the actor boundary, then decide whether to retry, block, or continue.
 Tools are declared on the topology and granted to actors via an allowlist:
 
 ```ts
-defineActorWebTopology({
+defineTopology({
   tools: [tool('repo.diff'), tool('verification.run')],
   actors: {
     verifier: actor({

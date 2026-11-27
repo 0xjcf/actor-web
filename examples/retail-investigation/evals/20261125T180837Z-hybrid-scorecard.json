@@ -1,0 +1,323 @@
+{
+  "liveReport": "20261125T180837Z-hybrid-live.json.gz",
+  "scriptedReport": "20261125T180821Z-hybrid-scripted.json.gz",
+  "model": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "settings": {
+      "status": "captured",
+      "value": {
+        "temperature": 0,
+        "max_completion_tokens": 900,
+        "parallelToolCalls": false
+      }
+    }
+  },
+  "bounds": {
+    "maxCalls": 224,
+    "maxReadsPerAssignment": 6,
+    "retries": 0
+  },
+  "trials": 2,
+  "artifactSha256": {
+    "20261125T180837Z-hybrid-live.json.gz": "d567c3d1151eca9c07f9f05cda8521a3a151d759846a54dc7c7893d2a0eb6987",
+    "20261125T180821Z-hybrid-scripted.json.gz": "d5ed5f23023f3998ad2464e3e4e7bb8b769b1fe31d623eeb80559330772de75c"
+  },
+  "sourceSha256": {
+    "demo.ts": "91f6a5b36f49d2f9f6672f8ced3016c00edf401e6a8c4089f6d9cc3adb3e96b8",
+    "evidence.ts": "78c607041509f390dc395d60f741381dcb27d27eb0c0d2f8ede5e1141105aa81",
+    "evaluation.ts": "16d3da5c74545d4cd07938fa2cfd98f6517604df77e541b3df2f331ec58cbcec",
+    "fixtures.ts": "1fe3d5bbd7a191b4731a355aae549dac487622de9f86f2653b51ea5b3669945c",
+    "investigation.ts": "3fce58458794896ff7e34fb36db88420f89c5d195e2054a7372bf6ccf83c13be",
+    "policy.ts": "ca58514a7dc68dd11c442f96805e87fa5e8a5364fb626aac10241133e58fd1fb",
+    "reconciliation.ts": "a57049bf80e5460defee680edb45b99174eed1a70e5d2ca6473c03262c6bc4a4",
+    "scripted-provider.ts": "404539308a0f7c6ddb0e9aecd09d0084e8261370d085de6fe303237f0fad1707"
+  },
+  "metricsDefinition": "All attempts in denominators and resource totals, including rejected runs. All checks = accepted + correct numeric facts + fixture status + exact finding set; not a prose score. Unknown token usage is not estimated.",
+  "liveByStrategy": {
+    "fixed": {
+      "attempts": 16,
+      "accepted": 10,
+      "allChecksPassed": 8,
+      "exactFindingSets": 8,
+      "correctAbstentions": 2,
+      "reads": 96,
+      "modelCalls": 16,
+      "reportedInputTokens": 50130,
+      "reportedOutputTokens": 4508,
+      "attemptsWithUsage": 16,
+      "meanElapsedMs": 3418.9,
+      "rejections": {
+        "taskMismatch": 6
+      }
+    },
+    "rules": {
+      "attempts": 16,
+      "accepted": 16,
+      "allChecksPassed": 7,
+      "exactFindingSets": 7,
+      "correctAbstentions": 2,
+      "reads": 66,
+      "modelCalls": 16,
+      "reportedInputTokens": 44898,
+      "reportedOutputTokens": 3715,
+      "attemptsWithUsage": 16,
+      "meanElapsedMs": 2724.9,
+      "rejections": {}
+    },
+    "adaptive": {
+      "attempts": 16,
+      "accepted": 5,
+      "allChecksPassed": 2,
+      "exactFindingSets": 2,
+      "correctAbstentions": 2,
+      "reads": 87,
+      "modelCalls": 103,
+      "reportedInputTokens": 237641,
+      "reportedOutputTokens": 8874,
+      "attemptsWithUsage": 16,
+      "meanElapsedMs": 10293.6,
+      "rejections": {
+        "taskMismatch": 11
+      }
+    },
+    "hybrid": {
+      "attempts": 16,
+      "accepted": 7,
+      "allChecksPassed": 3,
+      "exactFindingSets": 4,
+      "correctAbstentions": 2,
+      "reads": 90,
+      "modelCalls": 74,
+      "reportedInputTokens": 123254,
+      "reportedOutputTokens": 6765,
+      "attemptsWithUsage": 16,
+      "meanElapsedMs": 7530.4,
+      "rejections": {
+        "taskMismatch": 7,
+        "schemaMismatch": 2
+      }
+    }
+  },
+  "scriptedByStrategy": {
+    "fixed": {
+      "attempts": 16,
+      "accepted": 16,
+      "allChecksPassed": 16,
+      "exactFindingSets": 16,
+      "correctAbstentions": 2,
+      "reads": 96,
+      "modelCalls": 16,
+      "reportedInputTokens": 0,
+      "reportedOutputTokens": 0,
+      "attemptsWithUsage": 0,
+      "meanElapsedMs": 3.1,
+      "rejections": {}
+    },
+    "rules": {
+      "attempts": 16,
+      "accepted": 16,
+      "allChecksPassed": 14,
+      "exactFindingSets": 14,
+      "correctAbstentions": 2,
+      "reads": 66,
+      "modelCalls": 16,
+      "reportedInputTokens": 0,
+      "reportedOutputTokens": 0,
+      "attemptsWithUsage": 0,
+      "meanElapsedMs": 1.8,
+      "rejections": {}
+    },
+    "adaptive": {
+      "attempts": 16,
+      "accepted": 16,
+      "allChecksPassed": 14,
+      "exactFindingSets": 14,
+      "correctAbstentions": 2,
+      "reads": 66,
+      "modelCalls": 82,
+      "reportedInputTokens": 0,
+      "reportedOutputTokens": 0,
+      "attemptsWithUsage": 0,
+      "meanElapsedMs": 4.6,
+      "rejections": {}
+    },
+    "hybrid": {
+      "attempts": 16,
+      "accepted": 16,
+      "allChecksPassed": 16,
+      "exactFindingSets": 16,
+      "correctAbstentions": 2,
+      "reads": 58,
+      "modelCalls": 42,
+      "reportedInputTokens": 0,
+      "reportedOutputTokens": 0,
+      "attemptsWithUsage": 0,
+      "meanElapsedMs": 2.2,
+      "rejections": {}
+    }
+  },
+  "originalSixOnly": {
+    "historicalAdaptiveReports": ["20261125T170837Z-live.json.gz", "20261125T173113Z-live.json"],
+    "historicalAdaptive": {
+      "attempts": 12,
+      "accepted": 12,
+      "allChecksPassed": 2,
+      "exactFindingSets": 2,
+      "correctAbstentions": 2,
+      "reads": 62,
+      "modelCalls": 74,
+      "reportedInputTokens": 169689,
+      "reportedOutputTokens": 6022,
+      "attemptsWithUsage": 12,
+      "meanElapsedMs": 9453.9,
+      "rejections": {}
+    },
+    "newHybrid": {
+      "attempts": 12,
+      "accepted": 5,
+      "allChecksPassed": 2,
+      "exactFindingSets": 2,
+      "correctAbstentions": 2,
+      "reads": 68,
+      "modelCalls": 56,
+      "reportedInputTokens": 93982,
+      "reportedOutputTokens": 5056,
+      "attemptsWithUsage": 12,
+      "meanElapsedMs": 7548.3,
+      "rejections": {
+        "taskMismatch": 6,
+        "schemaMismatch": 1
+      }
+    },
+    "caveat": "Unmatched historical trials; validator and prompt changed. Use the live matched controls for decisions."
+  },
+  "hybridCases": {
+    "promotion": {
+      "attempts": 2,
+      "accepted": 0,
+      "allChecksPassed": 0,
+      "exactFindingSets": 0,
+      "correctAbstentions": 0,
+      "reads": 11,
+      "modelCalls": 9,
+      "reportedInputTokens": 15418,
+      "reportedOutputTokens": 859,
+      "attemptsWithUsage": 2,
+      "meanElapsedMs": 7471.5,
+      "rejections": {
+        "taskMismatch": 2
+      }
+    },
+    "restocking": {
+      "attempts": 2,
+      "accepted": 2,
+      "allChecksPassed": 0,
+      "exactFindingSets": 0,
+      "correctAbstentions": 0,
+      "reads": 12,
+      "modelCalls": 10,
+      "reportedInputTokens": 17587,
+      "reportedOutputTokens": 1063,
+      "attemptsWithUsage": 2,
+      "meanElapsedMs": 8646.5,
+      "rejections": {}
+    },
+    "bulk-order": {
+      "attempts": 2,
+      "accepted": 1,
+      "allChecksPassed": 0,
+      "exactFindingSets": 0,
+      "correctAbstentions": 0,
+      "reads": 10,
+      "modelCalls": 8,
+      "reportedInputTokens": 12795,
+      "reportedOutputTokens": 669,
+      "attemptsWithUsage": 2,
+      "meanElapsedMs": 5906,
+      "rejections": {
+        "taskMismatch": 1
+      }
+    },
+    "data-defect": {
+      "attempts": 2,
+      "accepted": 0,
+      "allChecksPassed": 0,
+      "exactFindingSets": 0,
+      "correctAbstentions": 0,
+      "reads": 11,
+      "modelCalls": 9,
+      "reportedInputTokens": 15202,
+      "reportedOutputTokens": 831,
+      "attemptsWithUsage": 2,
+      "meanElapsedMs": 7366,
+      "rejections": {
+        "taskMismatch": 1,
+        "schemaMismatch": 1
+      }
+    },
+    "confounded": {
+      "attempts": 2,
+      "accepted": 0,
+      "allChecksPassed": 0,
+      "exactFindingSets": 0,
+      "correctAbstentions": 0,
+      "reads": 12,
+      "modelCalls": 10,
+      "reportedInputTokens": 17816,
+      "reportedOutputTokens": 949,
+      "attemptsWithUsage": 2,
+      "meanElapsedMs": 8672.5,
+      "rejections": {
+        "taskMismatch": 2
+      }
+    },
+    "insufficient": {
+      "attempts": 2,
+      "accepted": 2,
+      "allChecksPassed": 2,
+      "exactFindingSets": 2,
+      "correctAbstentions": 2,
+      "reads": 12,
+      "modelCalls": 10,
+      "reportedInputTokens": 15164,
+      "reportedOutputTokens": 685,
+      "attemptsWithUsage": 2,
+      "meanElapsedMs": 7227.5,
+      "rejections": {}
+    },
+    "mixed-order-promotion": {
+      "attempts": 2,
+      "accepted": 1,
+      "allChecksPassed": 1,
+      "exactFindingSets": 1,
+      "correctAbstentions": 0,
+      "reads": 10,
+      "modelCalls": 8,
+      "reportedInputTokens": 13140,
+      "reportedOutputTokens": 898,
+      "attemptsWithUsage": 2,
+      "meanElapsedMs": 6902,
+      "rejections": {
+        "taskMismatch": 1
+      }
+    },
+    "partial-availability": {
+      "attempts": 2,
+      "accepted": 1,
+      "allChecksPassed": 0,
+      "exactFindingSets": 1,
+      "correctAbstentions": 0,
+      "reads": 12,
+      "modelCalls": 10,
+      "reportedInputTokens": 16132,
+      "reportedOutputTokens": 811,
+      "attemptsWithUsage": 2,
+      "meanElapsedMs": 8051,
+      "rejections": {
+        "schemaMismatch": 1
+      }
+    }
+  },
+  "decision": "Keep hybrid opt-in. Lower calls and input tokens than matched adaptive; more overall reads, no one-call wins on bulk-order or data-defect, and quality gates unmet. No post-trial prompt tuning or automatic retries."
+}
