@@ -10,8 +10,6 @@ const __dirname = dirname(__filename);
 const packageRoot = resolve(__dirname, '..');
 const repoRoot = resolve(packageRoot, '../..');
 const releaseBase = 'origin/main';
-// This test builds and packs three real packages before exercising a clean consumer.
-const packAndConsumeTimeoutMs = 120_000;
 
 type CliPackageManifest = {
   name: string;
@@ -466,7 +464,8 @@ describe('@actor-web/cli release contract', () => {
     }
   });
 
-  it('packs a clean consumer-ready artifact with rewritten workspace dependencies', async () => {
+  // This test builds and packs three real packages before exercising a clean consumer.
+  it('packs a consumer-ready CLI with rewritten workspace dependencies', async () => {
     const packDir = await makeTempDir('actor-web-cli-pack-');
     const cliManifest = await readJson<CliPackageManifest>(resolve(packageRoot, 'package.json'));
     const runtimeManifest = await readJson<CliPackageManifest>(
@@ -856,5 +855,5 @@ describe('@actor-web/cli release contract', () => {
       expect(exportSmoke.stdout).toContain('"serve"');
       expect(exportSmoke.stdout).toContain('"info"');
     }
-  }, packAndConsumeTimeoutMs);
+  }, 120_000);
 });
