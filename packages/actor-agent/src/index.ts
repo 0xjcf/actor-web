@@ -45,7 +45,7 @@ export {
   serializeAgentTraceJsonl,
 } from './trace.js';
 
-export const ACTOR_WEB_LLM_TOOL_NAME = 'llm' as const;
+export const LLM_TOOL_NAME = 'llm' as const;
 
 export type ActorAgentMessageRole = 'system' | 'user' | 'assistant' | 'tool';
 
@@ -120,7 +120,7 @@ export type ActorAgentLlmProvider = (
 ) => ActorAgentLlmResult | Promise<ActorAgentLlmResult>;
 
 export type ActorAgentToolRegistry = {
-  readonly [ACTOR_WEB_LLM_TOOL_NAME]: ActorToolExecutor<ActorAgentLlmRequest, ActorAgentLlmResult>;
+  readonly [LLM_TOOL_NAME]: ActorToolExecutor<ActorAgentLlmRequest, ActorAgentLlmResult>;
 };
 
 export type ActorAgentLoopMessage =
@@ -241,7 +241,7 @@ function normalizeThrownError(error: unknown): ActorAgentError {
   }
   const message = toErrorMessage(error);
   return {
-    code: message.includes(`Actor tool "${ACTOR_WEB_LLM_TOOL_NAME}" is not registered.`)
+    code: message.includes(`Actor tool "${LLM_TOOL_NAME}" is not registered.`)
       ? 'LLM_TOOL_UNAVAILABLE'
       : 'AGENT_LOOP_FAILED',
     message,
@@ -309,7 +309,7 @@ function serializeToolOutput(output: unknown): string {
 }
 
 function toolNamesForModel(tools: { list(): string[] }): readonly string[] {
-  return tools.list().filter((name) => name !== ACTOR_WEB_LLM_TOOL_NAME);
+  return tools.list().filter((name) => name !== LLM_TOOL_NAME);
 }
 
 function toolDefinitionsForModel(
@@ -763,7 +763,7 @@ export function createLlmToolRegistry(input: {
   readonly llm: ActorAgentLlmProvider;
 }): ActorAgentToolRegistry {
   return {
-    [ACTOR_WEB_LLM_TOOL_NAME]: async (request, context) => {
+    [LLM_TOOL_NAME]: async (request, context) => {
       try {
         return await input.llm(request, {
           actorId: context.actorId,
@@ -1021,14 +1021,14 @@ export function createAgentLoopBehavior(
             phase: 'intent_recorded',
             irreversible: true,
             intent: {
-              tool: ACTOR_WEB_LLM_TOOL_NAME,
+              tool: LLM_TOOL_NAME,
               messageType: message.type,
             },
           });
         }
         dispatched = true;
         const result = await tools.execute<ActorAgentLlmResult, ActorAgentLlmRequest>(
-          ACTOR_WEB_LLM_TOOL_NAME,
+          LLM_TOOL_NAME,
           {
             system,
             messages,
@@ -1055,7 +1055,7 @@ export function createAgentLoopBehavior(
                 phase: 'receipt_recorded',
                 irreversible: true,
                 intent: {
-                  tool: ACTOR_WEB_LLM_TOOL_NAME,
+                  tool: LLM_TOOL_NAME,
                   messageType: message.type,
                 },
                 receipt: result,
@@ -1109,7 +1109,7 @@ export function createAgentLoopBehavior(
               phase: 'receipt_recorded',
               irreversible: true,
               intent: {
-                tool: ACTOR_WEB_LLM_TOOL_NAME,
+                tool: LLM_TOOL_NAME,
                 messageType: message.type,
               },
               receipt: result,
@@ -1145,7 +1145,7 @@ export function createAgentLoopBehavior(
                 phase: 'reconciliation_required',
                 irreversible: true,
                 intent: {
-                  tool: ACTOR_WEB_LLM_TOOL_NAME,
+                  tool: LLM_TOOL_NAME,
                   messageType: message.type,
                 },
                 reconciliationReason: failureError?.message,
@@ -1173,3 +1173,8 @@ export function createActorAgentTools(input: {
 }): ActorToolRegistry {
   return createLlmToolRegistry(input) as unknown as ActorToolRegistry;
 }
+
+export {
+  /** @deprecated Use LLM_TOOL_NAME instead. */
+  LLM_TOOL_NAME as ACTOR_WEB_LLM_TOOL_NAME,
+};

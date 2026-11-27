@@ -1,9 +1,9 @@
-import type { StartedActorWebNode } from '@actor-web/runtime/browser';
-import { startActorWebNode } from '@actor-web/runtime/browser';
+import type { StartedNode } from '@actor-web/runtime/browser';
+import { startNode } from '@actor-web/runtime/browser';
 import { createPongClientNodeAddress } from '../pong-contract';
 import { createPongTopology } from '../pong-topology';
 
-type StartedPongNode = StartedActorWebNode<never>;
+type StartedPongNode = StartedNode<ReturnType<typeof createPongTopology>>;
 
 export type MeshPongWebSocketStatus =
   | 'connecting'
@@ -67,7 +67,7 @@ export type MeshPongBrowserWebSocketStartResult =
 export interface StartMeshPongBrowserWebSocketOptions {
   readonly sessionId: string;
   readonly helper?: MeshPongWebSocketDevHelperClient;
-  readonly startClientNode?: typeof startActorWebNode;
+  readonly startClientNode?: typeof startNode;
 }
 
 const MESH_PONG_WEBSOCKET_HELPER_PATH = '/__mesh-pong/websocket';
@@ -235,8 +235,8 @@ export async function startMeshPongBrowserWebSocketClient(
   const topology = createPongTopology({ clientNodeAddress });
   let client: StartedPongNode | null = null;
   try {
-    const startClientNode = options.startClientNode ?? startActorWebNode;
-    client = await startClientNode(topology as never, {
+    const startClientNode = options.startClientNode ?? startNode;
+    client = await startClientNode(topology, {
       node: 'client',
       peers: {
         server: helperStatus.transportUrl,
@@ -247,15 +247,7 @@ export async function startMeshPongBrowserWebSocketClient(
         heartbeatIntervalMs: 0,
       },
     });
-    const playerSession = await (
-      client as unknown as {
-        actors: {
-          playerSession: {
-            instance(options: { sessionId: string }): Promise<{ address: string }>;
-          };
-        };
-      }
-    ).actors.playerSession.instance({
+    const playerSession = await client.actors.playerSession.instance({
       sessionId: options.sessionId,
     });
 

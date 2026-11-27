@@ -7,10 +7,10 @@ import {
   type ActorAgentLlmResult,
   createActorAgentTools,
 } from '@actor-web/agent';
-import { type ActorMessage, type ActorRef, createActorSource } from '@actor-web/runtime';
+import { type ActorMessage, type ActorRef, ask, createActorSource } from '@actor-web/runtime';
 import type { ActorToolExecutionContext, BroadcastChannelLike } from '@actor-web/runtime/browser';
 import { createActorToolbox } from '@actor-web/runtime/browser';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
   createBrowserMlxLlmProvider,
   resolveBrowserMlxProviderConfig,
@@ -466,7 +466,7 @@ async function resolveSessionRefs(runtime: StartedMeshPongRuntime): Promise<Mesh
 async function currentMatchState(
   matchCoordinator: ActorRef<PongMatchState, PongMatchCommand>
 ): Promise<PongMatchState> {
-  return matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' });
+  return ask(matchCoordinator, { type: 'GET_MATCH' });
 }
 
 async function syncCoordinatorSession(
@@ -474,7 +474,7 @@ async function syncCoordinatorSession(
   session: ActorRef<PongPlayerSessionState, PlayerSessionCommand>
 ): Promise<void> {
   const state = await session.ask<PongPlayerSessionState>({ type: 'GET_SESSION' });
-  const result = await matchCoordinator.ask<PongMatchCommandResult>({
+  const result = await ask(matchCoordinator, {
     type: 'SYNC_SESSION',
     requestSessionId: state.sessionId,
     session: state,
@@ -930,6 +930,32 @@ function createTurnStepperHarness(
 }
 
 describe('Mesh Pong transport parity', () => {
+  it('infers query and mutation replies from the topology’s match coordinator', async () => {
+    const runtime = await startMeshPongLocal();
+    startedRuntimes.push(runtime);
+    const server = runtime.nodes.server;
+    if (!server) throw new Error('Expected the local server node.');
+    const coordinator = server.requireActor('matchCoordinator');
+    const match = await ask(coordinator, { type: 'GET_MATCH' });
+    expectTypeOf(match).toEqualTypeOf<PongMatchState>();
+    const result = await ask(coordinator, {
+      type: 'TICK_MATCH',
+      requestSessionId: 'reader',
+      expectedGeneration: match.generation,
+    });
+    expectTypeOf(result).toEqualTypeOf<PongMatchCommandResult>();
+    expect(result.ok).toBe(false);
+
+    // Type-only checks: do not dispatch these malformed requests.
+    // @ts-expect-error Player-session commands do not belong to the match coordinator.
+    expectTypeOf(() => ask(coordinator, { type: 'GET_SESSION' }));
+    // @ts-expect-error A tick requires the caller's session and expected generation.
+    expectTypeOf(() => ask(coordinator, { type: 'TICK_MATCH' }));
+    // @ts-expect-error Unannotated actors do not promise any typed replies.
+    expectTypeOf(() => ask(server.requireActor('room'), { type: 'GET_ROOM' }));
+    expectTypeOf(match).not.toEqualTypeOf<PongMatchCommandResult>();
+  });
+
   it('derives cross-tab epoch timestamps from a shared clock source', () => {
     const clock = createMeshPongClock({
       timeOrigin: 1_000,

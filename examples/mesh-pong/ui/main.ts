@@ -1,4 +1,5 @@
 import type { ActorMessage, ActorRef } from '@actor-web/runtime';
+import { ask } from '@actor-web/runtime/browser';
 import { startMeshPongBroadcast } from '../modes/broadcast';
 import { startMeshPongLocal } from '../modes/local';
 import { startMeshPongMesh } from '../modes/mesh';
@@ -1235,7 +1236,7 @@ function applyProjectedMatch(
 }
 
 async function currentMatchState(nextRefs: RuntimeRefs): Promise<PongMatchState> {
-  return nextRefs.matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' });
+  return ask(nextRefs.matchCoordinator, { type: 'GET_MATCH' });
 }
 
 export type MeshPongPlayerSessionHydrationResult =
@@ -1272,7 +1273,7 @@ async function syncMeshPongPlayerSessionState(options: {
   if (!options.shouldApply()) {
     return { ok: false, reason: 'cancelled' };
   }
-  const syncResult = await options.matchCoordinator.ask<PongMatchCommandResult>({
+  const syncResult = await ask(options.matchCoordinator, {
     type: 'SYNC_SESSION',
     requestSessionId: options.session.sessionId,
     session: options.session,
@@ -1284,7 +1285,7 @@ async function syncMeshPongPlayerSessionState(options: {
   if (!options.shouldApply()) {
     return { ok: false, reason: 'cancelled' };
   }
-  const match = await options.matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' });
+  const match = await ask(options.matchCoordinator, { type: 'GET_MATCH' });
   if (!options.shouldApply()) {
     return { ok: false, reason: 'cancelled' };
   }
@@ -1317,7 +1318,7 @@ export async function restoreAndSyncMeshPongPlayerSession(options: {
     return { ok: false, reason: 'cancelled' };
   }
 
-  const authoritativeMatch = await options.matchCoordinator.ask<PongMatchState>({
+  const authoritativeMatch = await ask(options.matchCoordinator, {
     type: 'GET_MATCH',
   });
   if (!shouldApply()) {
@@ -1403,7 +1404,7 @@ async function syncMatchForMode(
   shouldContinue: () => boolean = () => true
 ): Promise<boolean> {
   const syncSession = async (session: PongPlayerSessionState): Promise<boolean> => {
-    const result = await nextRefs.matchCoordinator.ask<PongMatchCommandResult>({
+    const result = await ask(nextRefs.matchCoordinator, {
       type: 'SYNC_SESSION',
       requestSessionId: session.sessionId,
       session,
@@ -1712,7 +1713,7 @@ async function resetGame(): Promise<void> {
 
   clearControllerDiagnostics();
   const currentMatch = await currentMatchState(currentRefs);
-  const result = await currentRefs.matchCoordinator.ask<PongMatchCommandResult>({
+  const result = await ask(currentRefs.matchCoordinator, {
     type: 'RESTART_MATCH',
     requestSessionId: browserSessionId,
     expectedGeneration: currentMatch.generation,
@@ -2016,7 +2017,7 @@ async function applyControllerInput(
 ): Promise<boolean> {
   const appliedAtMs = metadata?.appliedAtMs ?? nowMs();
   const currentMatch = matchState ?? (await currentMatchState(nextRefs));
-  const result = await nextRefs.matchCoordinator.ask<PongMatchCommandResult>({
+  const result = await ask(nextRefs.matchCoordinator, {
     type: 'APPLY_CONTROLLER_INPUT',
     requestSessionId: input.sessionId,
     expectedGeneration: currentMatch.generation,
@@ -2633,7 +2634,7 @@ export function createMeshPongTurnStepper(deps: MeshPongTurnStepperDeps): MeshPo
       }
 
       const coordinatorState = await currentMatchState(deps.refs);
-      const tickResult = await deps.refs.matchCoordinator.ask<PongMatchCommandResult>({
+      const tickResult = await ask(deps.refs.matchCoordinator, {
         type: 'TICK_MATCH',
         requestSessionId: deps.browserSessionId,
         expectedGeneration: coordinatorState.generation,

@@ -52,9 +52,9 @@ placement, lifecycle, supervision, and event wiring — see
 | --- | --- |
 | `@actor-web/runtime` | `defineBehavior`, `createActorSystem`, message-plan types, testing hooks |
 | `@actor-web/runtime/source` | Platform-neutral source contracts and `createActorSource`, `createActorCommandSource`, `createActorReadModelSource` for caller-owned actor refs |
-| `@actor-web/runtime/topology` | `defineActorWebTopology`, `actor`, `node`, `supervisor`, `tool` — declarative, import-safe topology definitions |
-| `@actor-web/runtime/node` | `serveNode`, `serveActorWebHttp` — host a topology node in Node.js with WebSocket transport and gateway |
-| `@actor-web/runtime/browser` | `startActorWebNode`, `createActorWebClient`, `createActorWebReadModelClient` — browser/worker nodes and gateway clients |
+| `@actor-web/runtime/topology` | `defineTopology`, `actor`, `node`, `supervisor`, `tool` — declarative, import-safe topology definitions |
+| `@actor-web/runtime/node` | `serveNode`, `serveHttp` — host a topology node in Node.js with WebSocket transport and gateway |
+| `@actor-web/runtime/browser` | `startNode`, `createClient`, `createReadModelClient` — browser/worker nodes and gateway clients |
 | `@actor-web/runtime/definition` | Pure, bounded validation of a limited XState-v5 JSON definition profile; no runtime startup |
 
 ## Declarative definition validation

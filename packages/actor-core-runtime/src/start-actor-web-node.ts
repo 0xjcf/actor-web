@@ -3,12 +3,12 @@ import type { ActorSystem, MessageTransport } from './actor-system.js';
 import { createActorSystem } from './actor-system-impl.js';
 import type { ActorToolRegistry } from './actor-tools.js';
 import {
-  type ActorWebNodeActorHandles,
   type ActorWebNodeActorMap,
   type ActorWebSubscriptionTeardown,
   createActorWebNodeActorHandles,
   createActorWebNodeToolAccess,
   getActorWebNodeDefinition,
+  type NodeActorHandles,
   resolveOwnedActorWebSupervisorGroups,
   spawnOwnedActorWebActors,
   wireOwnedActorWebSubscriptions,
@@ -27,14 +27,9 @@ import {
   type RuntimeTransportStatus,
 } from './runtime-transport-status.js';
 import type { RuntimeTransportTelemetryObserver } from './runtime-transport-telemetry.js';
-import type {
-  ActorWebActorContext,
-  ActorWebActorMessage,
-  ActorWebTopology,
-  ActorWebTopologyInput,
-} from './topology.js';
+import type { ActorContextOf, ActorMessageOf, Topology, TopologyInput } from './topology.js';
 
-export interface ActorWebBrowserNodeTransportOptions {
+export interface BrowserNodeTransportOptions {
   readonly peers?: Record<string, string>;
   readonly peerUrlResolver?: (
     nodeAddress: string
@@ -61,24 +56,22 @@ type StartableMessageTransport = MessageTransport & {
 
 const DEFAULT_TRANSPORT_HEARTBEAT_INTERVAL_MS = 15_000;
 
-export interface StartActorWebNodeOptions<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
-> {
+export interface StartNodeOptions<TTopology extends Topology<TopologyInput>> {
   readonly node: keyof TTopology['nodes'] & string;
   readonly peers?: Partial<Record<keyof TTopology['nodes'] & string, string>>;
   readonly connect?: readonly (keyof TTopology['nodes'] & string)[];
-  readonly transport?: ActorWebBrowserNodeTransportOptions | MessageTransport;
+  readonly transport?: BrowserNodeTransportOptions | MessageTransport;
   readonly discovery?: RuntimePeerDiscoveryProvider;
   readonly tools?: ActorToolRegistry;
 }
 
-export interface StartedActorWebNode<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+export interface StartedNode<
+  TTopology extends Topology<TopologyInput>,
   TTransport extends MessageTransport = MessageTransport,
 > {
   readonly system: ActorSystem;
   readonly transport: TTransport;
-  readonly actors: ActorWebNodeActorHandles<TTopology>;
+  readonly actors: NodeActorHandles<TTopology>;
   start(): Promise<void>;
   stop(): Promise<void>;
   getTransportStatus(): RuntimeTransportStatus;
@@ -86,20 +79,14 @@ export interface StartedActorWebNode<
   getActor<TKey extends keyof TTopology['actors'] & string>(
     key: TKey
   ):
-    | ActorRef<
-        ActorWebActorContext<TTopology['actors'][TKey]>,
-        ActorWebActorMessage<TTopology['actors'][TKey]>
-      >
+    | ActorRef<ActorContextOf<TTopology['actors'][TKey]>, ActorMessageOf<TTopology['actors'][TKey]>>
     | undefined;
   requireActor<TKey extends keyof TTopology['actors'] & string>(
     key: TKey
-  ): ActorRef<
-    ActorWebActorContext<TTopology['actors'][TKey]>,
-    ActorWebActorMessage<TTopology['actors'][TKey]>
-  >;
+  ): ActorRef<ActorContextOf<TTopology['actors'][TKey]>, ActorMessageOf<TTopology['actors'][TKey]>>;
 }
 
-function resolveTopologyPeerUrls<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+function resolveTopologyPeerUrls<TTopology extends Topology<TopologyInput>>(
   topology: TTopology,
   peers: Partial<Record<keyof TTopology['nodes'] & string, string>> | undefined
 ): Record<string, string> {
@@ -119,7 +106,7 @@ function resolveTopologyPeerUrls<TTopology extends ActorWebTopology<ActorWebTopo
   );
 }
 
-function resolveTopologyNodeAddresses<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+function resolveTopologyNodeAddresses<TTopology extends Topology<TopologyInput>>(
   topology: TTopology,
   nodeKeys: readonly (keyof TTopology['nodes'] & string)[]
 ): string[] {
@@ -146,7 +133,7 @@ function isMessageTransport(value: unknown): value is MessageTransport {
 
 function createTopologyTransport(
   nodeAddress: string,
-  transportOptions: ActorWebBrowserNodeTransportOptions | MessageTransport | undefined,
+  transportOptions: BrowserNodeTransportOptions | MessageTransport | undefined,
   transportPeers: Record<string, string>,
   discoveryPeerUrls: ReadonlyMap<string, string>,
   useDiscoveryPeerUrlResolver: boolean
@@ -197,24 +184,24 @@ function createTopologyTransport(
   });
 }
 
-export async function startActorWebNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+export async function startNode<TTopology extends Topology<TopologyInput>>(
   topology: TTopology,
-  options: StartActorWebNodeOptions<TTopology> & {
-    readonly transport?: ActorWebBrowserNodeTransportOptions;
+  options: StartNodeOptions<TTopology> & {
+    readonly transport?: BrowserNodeTransportOptions;
   }
-): Promise<StartedActorWebNode<TTopology, MessageTransport>>;
-export async function startActorWebNode<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+): Promise<StartedNode<TTopology, MessageTransport>>;
+export async function startNode<
+  TTopology extends Topology<TopologyInput>,
   TTransport extends MessageTransport,
 >(
   topology: TTopology,
-  options: StartActorWebNodeOptions<TTopology> & { readonly transport: TTransport }
-): Promise<StartedActorWebNode<TTopology, TTransport>>;
+  options: StartNodeOptions<TTopology> & { readonly transport: TTransport }
+): Promise<StartedNode<TTopology, TTransport>>;
 
-export async function startActorWebNode<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+export async function startNode<TTopology extends Topology<TopologyInput>>(
   topology: TTopology,
-  options: StartActorWebNodeOptions<TTopology>
-): Promise<StartedActorWebNode<TTopology, MessageTransport>> {
+  options: StartNodeOptions<TTopology>
+): Promise<StartedNode<TTopology, MessageTransport>> {
   const nodeDefinition = getActorWebNodeDefinition(topology, options.node);
   const transportOptions = options.transport;
   const topologyPeers = resolveTopologyPeerUrls(topology, options.peers);
@@ -417,7 +404,7 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
     }
   };
 
-  const startedNode: StartedActorWebNode<TTopology, MessageTransport> = {
+  const startedNode: StartedNode<TTopology, MessageTransport> = {
     system,
     transport,
     actors: actorHandles,
@@ -436,8 +423,8 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
     getActor(key) {
       return actors.get(key) as
         | ActorRef<
-            ActorWebActorContext<TTopology['actors'][typeof key]>,
-            ActorWebActorMessage<TTopology['actors'][typeof key]>
+            ActorContextOf<TTopology['actors'][typeof key]>,
+            ActorMessageOf<TTopology['actors'][typeof key]>
           >
         | undefined;
     },
@@ -454,3 +441,16 @@ export async function startActorWebNode<TTopology extends ActorWebTopology<Actor
   await startedNode.start();
   return startedNode;
 }
+
+export type {
+  /** @deprecated Use BrowserNodeTransportOptions instead. */
+  BrowserNodeTransportOptions as ActorWebBrowserNodeTransportOptions,
+  /** @deprecated Use StartNodeOptions instead. */
+  StartNodeOptions as StartActorWebNodeOptions,
+  /** @deprecated Use StartedNode instead. */
+  StartedNode as StartedActorWebNode,
+};
+export {
+  /** @deprecated Use startNode instead. */
+  startNode as startActorWebNode,
+};

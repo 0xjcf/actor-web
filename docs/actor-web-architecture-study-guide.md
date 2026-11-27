@@ -46,7 +46,7 @@ The family resemblance is real:
 | `gen_server` behavior callbacks | `defineBehavior(...).withContext(...).onMessage(...)` | Separate reusable runtime machinery from application behavior |
 | Supervisor strategies | Topology supervisor groups and actor restart policies | Make recovery policy explicit and keep failure handling out of the happy path |
 | Registered names and distribution | Actor addresses, topology, directory, and transport | Address actors without coupling behavior to placement |
-| OTP application structure | `defineActorWebTopology(...)` and runtime hosts | Declare actors, nodes, placement, and lifecycle as data |
+| OTP application structure | `defineTopology(...)` and runtime hosts | Declare actors, nodes, placement, and lifecycle as data |
 
 The differences are equally important:
 

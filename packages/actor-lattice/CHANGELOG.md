@@ -4,7 +4,7 @@
 
 ### Patch Changes
 
-- Update the runtime dependency to `@actor-web/runtime@0.4.0`. No lattice API changes.
+- Update the runtime dependency to `@actor-web/runtime@0.4.0` and use its canonical API names internally. The lattice API is unchanged.
 
 ## 0.2.2
 

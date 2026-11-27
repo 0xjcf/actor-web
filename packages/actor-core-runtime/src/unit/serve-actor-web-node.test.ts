@@ -9,7 +9,7 @@ import {
   createRuntimeTransportTelemetryExporter,
 } from '../runtime-transport-telemetry.js';
 import { serveNode } from '../serve-actor-web-node.js';
-import { actor, defineActorWebTopology, node, tool } from '../topology.js';
+import { actor, defineTopology, node, tool } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 type CounterCommand =
@@ -117,7 +117,7 @@ async function waitFor<T>(
 
 describe('serveNode', () => {
   it('starts a topology node, spawns owned actors, and exposes a gateway source', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         worker: node('worker-node'),
@@ -193,7 +193,7 @@ describe('serveNode', () => {
   });
 
   it('applies gateway auth configured on the served topology node', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -259,7 +259,7 @@ describe('serveNode', () => {
     const resolvePrincipalAuthContexts: unknown[] = [];
     const decisions: unknown[] = [];
     let socket: WebSocket | undefined;
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -391,7 +391,7 @@ describe('serveNode', () => {
 
   it('forwards provider-neutral command admission through the served gateway entrypoint', async () => {
     const decisions: unknown[] = [];
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -496,7 +496,7 @@ describe('serveNode', () => {
     const decisions: unknown[] = [];
     const resolveScopeAuthContexts: unknown[] = [];
     const resolvePrincipalAuthContexts: unknown[] = [];
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -631,7 +631,7 @@ describe('serveNode', () => {
   });
 
   it('fails closed on malformed raw gateway JSON without throwing from the WebSocket callback', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -673,7 +673,7 @@ describe('serveNode', () => {
   });
 
   it('normalizes invalid gateway inbound queue limits to the default safe bound', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -750,7 +750,7 @@ describe('serveNode', () => {
   });
 
   it('exposes configured remote topology actors through the node gateway', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         worker: node('worker-node'),
@@ -828,7 +828,7 @@ describe('serveNode', () => {
   });
 
   it('rejects actors without behavior when they are owned by the served node', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -846,7 +846,7 @@ describe('serveNode', () => {
   });
 
   it('rolls back a partial startup failure before discovery publish and preserves the original error', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -883,7 +883,7 @@ describe('serveNode', () => {
   });
 
   it('injects registered tools into topology-owned node actors', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -923,7 +923,7 @@ describe('serveNode', () => {
   });
 
   it('creates parameterized actor instances from topology actor ids', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -963,7 +963,7 @@ describe('serveNode', () => {
   });
 
   it('deduplicates concurrent parameterized actor spawns and clears failed in-flight state', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -1010,7 +1010,7 @@ describe('serveNode', () => {
   });
 
   it('clears spawned actor caches only after system and transport shutdown complete', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -1050,7 +1050,7 @@ describe('serveNode', () => {
   });
 
   it('registers and unregisters listening nodes through discovery', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -1085,7 +1085,7 @@ describe('serveNode', () => {
   });
 
   it('exposes normalized transport and peer status with heartbeat defaults', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         worker: node('worker-node'),
@@ -1140,7 +1140,7 @@ describe('serveNode', () => {
   });
 
   it('forwards node transport idempotency options into runtime status', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -1179,7 +1179,7 @@ describe('serveNode', () => {
   });
 
   it('marks stopped peers disconnected through the runtime status API', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         worker: node('worker-node'),
@@ -1242,7 +1242,7 @@ describe('serveNode', () => {
   });
 
   it('preserves explicit heartbeat opt-out in topology runner status', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         worker: node('worker-node'),
@@ -1294,7 +1294,7 @@ describe('serveNode', () => {
   });
 
   it('passes topology runner transport telemetry to configured exporters', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -1349,7 +1349,7 @@ function createReceiverBehavior() {
 
 describe('serveNode topology subscriptions', () => {
   it('wires same-node topology subscriptions and delivers emitted events', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -1382,7 +1382,7 @@ describe('serveNode topology subscriptions', () => {
   });
 
   it('wires a cross-node subscription when a transport is configured', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         worker: node('worker-node'),

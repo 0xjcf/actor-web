@@ -1,4 +1,4 @@
-import type { ClosableActorWebSource } from '@actor-web/runtime/browser';
+import type { ClosableSource } from '@actor-web/runtime/browser';
 import { igniteCore } from 'ignite-element/actor-web';
 import type {
   FasTaskBoardCommand,
@@ -24,7 +24,7 @@ export interface FasDashboardRuntimeOptions {
 }
 
 export function createFasTaskDashboard(
-  source: ClosableActorWebSource<FasTaskBoardContext, FasTaskBoardCommand, FasTaskEvent>,
+  source: ClosableSource<FasTaskBoardContext, FasTaskBoardCommand, FasTaskEvent>,
   options: FasDashboardRuntimeOptions = {}
 ) {
   return igniteCore({

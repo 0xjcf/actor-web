@@ -1,5 +1,5 @@
 import { dependsOn, lattice } from '@actor-web/lattice';
-import { defineActorWebTopology, supervisor } from '@actor-web/runtime/topology';
+import { defineTopology, supervisor } from '@actor-web/runtime/topology';
 import {
   createFasHybridCoordinatorBehavior,
   createFasLatticeImplementerBehavior,
@@ -11,7 +11,7 @@ import { fasOrchestrationConfig } from './fas-orchestration-topology';
 
 export { FAS_COORDINATOR_NODE, FAS_WORKER_NODE } from './fas-orchestration-topology';
 
-export const fasAgentLoop = defineActorWebTopology({
+export const fasAgentLoop = defineTopology({
   ...fasOrchestrationConfig,
   actors: {
     ...fasOrchestrationConfig.actors,

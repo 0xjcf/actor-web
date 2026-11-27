@@ -21,6 +21,11 @@ controller vocabulary writes use `human` / `reflex` / `planner` / `hybrid`.
 
 ## Authority and durability
 
+Start with `GET_MATCH` in `ui/main.ts`: `await ask(matchCoordinator, { type: 'GET_MATCH' })`
+returns `PongMatchState`. A mutation such as `TICK_MATCH` requires the caller's session and
+expected generation and returns `PongMatchCommandResult`. The `ActorRequest` types in
+`pong-contract.ts` describe both sides; they don't validate remote messages or grant permission.
+
 - `Room` is authoritative for lobby membership, seats, readiness, host selection,
   and the immutable roster handoff. Its state is intentionally ephemeral in this example.
 - `MatchCoordinator` is authoritative for match phase, generation, canonical tick,
@@ -175,8 +180,8 @@ guard for the topology-independence guarantee from spike
 ## The invariant — define once
 
 ```ts
-import { ACTOR_WEB_LLM_TOOL_NAME } from '@actor-web/agent';
-import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
+import { LLM_TOOL_NAME } from '@actor-web/agent';
+import { actor, defineTopology, node, tool } from '@actor-web/runtime/topology';
 import { createPlayerSessionBehavior, matchCoordinatorBehavior } from './pong-behaviors';
 import { createPlayerSessionActorId, PONG_NODE_ADDRESSES } from './pong-contract';
 import { createPongControllerBehavior } from './pong-controller';
@@ -189,14 +194,14 @@ export interface CreatePongTopologyOptions {
 export function createPongTopology(options: CreatePongTopologyOptions = {}) {
   const clientNodeAddress = options.clientNodeAddress ?? PONG_NODE_ADDRESSES.localClient;
 
-  return defineActorWebTopology({
+  return defineTopology({
     nodes: {
       server: node(PONG_NODE_ADDRESSES.server),
       a: node(PONG_NODE_ADDRESSES.a),
       b: node(PONG_NODE_ADDRESSES.b),
       client: node(clientNodeAddress),
     },
-    tools: [tool(ACTOR_WEB_LLM_TOOL_NAME)],
+    tools: [tool(LLM_TOOL_NAME)],
     actors: {
       room: actor({
         id: 'room-lobby',
@@ -217,13 +222,13 @@ export function createPongTopology(options: CreatePongTopologyOptions = {}) {
         id: 'controller-left',
         node: 'a',
         behavior: createPongControllerBehavior('left'),
-        tools: [ACTOR_WEB_LLM_TOOL_NAME],
+        tools: [LLM_TOOL_NAME],
       }),
       controllerRight: actor({
         id: 'controller-right',
         node: 'b',
         behavior: createPongControllerBehavior('right'),
-        tools: [ACTOR_WEB_LLM_TOOL_NAME],
+        tools: [LLM_TOOL_NAME],
       }),
     },
     subscriptions: [],
@@ -287,7 +292,7 @@ examples/mesh-pong/
   pong-contract.ts          message/event types and deterministic Pong rules
   pong-behaviors.ts         coordinator and player-session actor behaviors
   pong-controller.ts        side-specific planner adapter actors behind the llm tool
-  pong-topology.ts          the shared defineActorWebTopology
+  pong-topology.ts          the shared defineTopology
   parity-proof.ts           data rendered by the UI proof panel
   modes/
     local.ts                one single-runtime server / a / b / client topology

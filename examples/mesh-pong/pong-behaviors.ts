@@ -1,4 +1,4 @@
-import { defineBehavior } from '@actor-web/runtime/browser';
+import { defineBehavior, type ReplyOf } from '@actor-web/runtime/browser';
 import {
   advanceBall,
   applyMatchControllerInput,
@@ -24,10 +24,8 @@ import {
   type PongLobbyEvent,
   type PongLobbyState,
   type PongMatchCommand,
-  type PongMatchCommandResult,
   type PongMatchEvent,
   type PongMatchMode,
-  type PongMatchState,
   type PongPaddleState,
   type PongPlayerSessionParams,
   type PongPlayerSessionState,
@@ -335,13 +333,12 @@ export const lobbyBehavior = defineBehavior<PongLobbyCommand, PongLobbyEvent>()
 export const matchCoordinatorBehavior = defineBehavior<PongMatchCommand, PongMatchEvent>()
   .withContext(createInitialMatchState())
   .onMessage(({ message, actor }) => {
-    const context = actor.getSnapshot().context as PongMatchState;
-
+    const context = actor.getSnapshot().context;
     if (message.type === 'GET_MATCH') {
-      return { reply: context };
+      return { reply: context satisfies ReplyOf<typeof message> };
     }
 
-    let result: PongMatchCommandResult;
+    let result: ReplyOf<typeof message>;
     switch (message.type) {
       case 'SYNC_SESSION':
         result = syncMatchSession(context, message.requestSessionId, message.session);

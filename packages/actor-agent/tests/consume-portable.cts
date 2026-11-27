@@ -6,7 +6,7 @@ import codec = require('@actor-web/agent/zod');
 
 import { z } from 'zod';
 
-const llm: 'llm' = agent.ACTOR_WEB_LLM_TOOL_NAME;
+const llm: 'llm' = agent.LLM_TOOL_NAME;
 const providerOptions: agent.LlmProviderOptions = {
   endpoint: 'https://example.invalid',
   model: 'test',

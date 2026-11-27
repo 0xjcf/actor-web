@@ -1,26 +1,26 @@
 ---
 title: Topology
-description: defineActorWebTopology, the actor/node/supervisor/tool DSL, and source factories.
+description: defineTopology, the actor/node/supervisor/tool DSL, and source factories.
 ---
 
 # Topology
 
 ```ts
-import { defineActorWebTopology, actor, node, supervisor, tool }
+import { defineTopology, actor, node, supervisor, tool }
   from '@actor-web/runtime/topology';
 ```
 
-## `defineActorWebTopology(input)`
+## `defineTopology(input)`
 
 ```ts
-defineActorWebTopology({
+defineTopology({
   contractVersion?: string;
   nodes: Record<string, NodeDefinition>;
   actors: Record<string, ActorDefinition>;
   supervisors?: Record<string, SupervisorDefinition>;
   subscriptions?: SubscriptionDefinition[];
   tools?: ToolReference[];
-}): ActorWebTopology
+}): Topology
 ```
 
 Declares the system's nodes, actors, supervisors, tool catalog, and event
@@ -73,7 +73,7 @@ Each actor in a topology exposes factories for UI consumption:
 | `actor.commands(opts)` | Command-capable `send` / `ask` surface using command-only gateway subscribe mode. |
 | `actor.session(opts)` | Explicit `{ readModel, commands, close }` lifecycle bundle. |
 
-`opts` is `ActorWebSourceOptions` — gateway/transport config
+`opts` is `GatewaySourceOptions` — gateway/transport config
 (`{ gateway: { url, scope?, auth? }, streamId?, createSocket?, clientVersion? }`),
 **not** actor identity. The actor identity comes from the topology path
 (`topology.actors.<key>`). `gateway.scope.params` carries product filters such
@@ -93,6 +93,6 @@ second Ignite config key.
 For consumers outside the topology's TypeScript project:
 
 ```ts
-import { createActorWebReadModelSource, createActorWebCommandSource }
+import { createGatewayReadModelSource, createGatewayCommandSource }
   from '@actor-web/runtime/browser';
 ```

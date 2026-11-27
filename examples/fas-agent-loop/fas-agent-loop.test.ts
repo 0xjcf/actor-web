@@ -1,8 +1,8 @@
 import { collectLatticeRegistrations, collectLatticeSubscriptions } from '@actor-web/lattice';
 import type { ActorToolExecutor } from '@actor-web/runtime';
 import { defineBehavior } from '@actor-web/runtime';
-import { startActorWebNode } from '@actor-web/runtime/browser';
-import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
+import { startNode } from '@actor-web/runtime/browser';
+import { actor, defineTopology, node, tool } from '@actor-web/runtime/topology';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertControlPlaneConformanceFixture,
@@ -334,7 +334,7 @@ describe('fas-agent-loop example', () => {
       tools: ['fas.async_probe'] as const,
       behavior: createAsyncProbeBehavior,
     });
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         worker: node('fas-async-tool-worker'),
       },
@@ -364,7 +364,7 @@ describe('fas-agent-loop example', () => {
         return new Promise<AsyncProbeResult>(() => {});
       },
     };
-    const worker = await startActorWebNode(topology, {
+    const worker = await startNode(topology, {
       node: 'worker',
       tools: asyncProbeTools,
     });

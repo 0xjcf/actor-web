@@ -1,8 +1,4 @@
-import type {
-  ActorRef,
-  ClosableActorWebSource,
-  StartedActorWebNode,
-} from '@actor-web/runtime/browser';
+import type { ActorRef, ClosableSource, StartedNode } from '@actor-web/runtime/browser';
 import {
   type FasPatch,
   type FasPlan,
@@ -31,12 +27,8 @@ export interface SubmitFasTaskInput {
 }
 
 type TaskRunRef = ActorRef<FasTaskContext, FasTaskCommand>;
-type FasStartedNode = StartedActorWebNode<typeof fasOrchestration>;
-type FasTaskBoardSource = ClosableActorWebSource<
-  FasTaskBoardContext,
-  FasTaskBoardCommand,
-  FasTaskEvent
->;
+type FasStartedNode = StartedNode<typeof fasOrchestration>;
+type FasTaskBoardSource = ClosableSource<FasTaskBoardContext, FasTaskBoardCommand, FasTaskEvent>;
 
 export interface FasAgentPorts {
   readonly planner: ActorRef<unknown, PlannerAgentCommand>;

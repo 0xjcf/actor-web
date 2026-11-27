@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createActorWebClient, createActorWebReadModelClient } from '../actor-web-client.js';
-import { type ActorWebGatewaySocket, createActorWebSource } from '../actor-web-source.js';
+import { createClient, createReadModelClient } from '../actor-web-client.js';
+import { createGatewaySource, type GatewaySocket } from '../actor-web-source.js';
 import type { ActorSource } from '../integration/actor-source.js';
 import {
-  type ActorWebActorContext,
-  type ActorWebActorEvent,
-  type ActorWebActorMessage,
+  type ActorContextOf,
+  type ActorEventOf,
+  type ActorMessageOf,
   actor,
-  defineActorWebTopology,
+  defineTopology,
   node,
   supervisor,
   tool,
@@ -46,7 +46,7 @@ function createShipmentBehavior() {
 
 describe('Actor-Web topology helpers', () => {
   it('builds actor addresses, node descriptors, and supervisor metadata', () => {
-    const logistics = defineActorWebTopology({
+    const logistics = defineTopology({
       contractVersion: '1.0.0',
       tools: [tool('route.plan', { description: 'Plan shipment routes.' })],
       nodes: {
@@ -94,9 +94,9 @@ describe('Actor-Web topology helpers', () => {
       children: ['shipment'],
     });
 
-    type InferredContext = ActorWebActorContext<typeof logistics.actors.shipment>;
-    type InferredCommand = ActorWebActorMessage<typeof logistics.actors.shipment>;
-    type InferredEvent = ActorWebActorEvent<typeof logistics.actors.shipment>;
+    type InferredContext = ActorContextOf<typeof logistics.actors.shipment>;
+    type InferredCommand = ActorMessageOf<typeof logistics.actors.shipment>;
+    type InferredEvent = ActorEventOf<typeof logistics.actors.shipment>;
 
     const source = logistics.actors.shipment.source({
       gateway: { url: 'ws://example.invalid/gateway' },
@@ -107,7 +107,7 @@ describe('Actor-Web topology helpers', () => {
         addEventListener: () => {},
       }),
     });
-    const explicitSource = createActorWebSource({
+    const explicitSource = createGatewaySource({
       actor: logistics.actors.shipment,
       gateway: { url: 'ws://example.invalid/gateway' },
       createSocket: () => ({
@@ -132,7 +132,7 @@ describe('Actor-Web topology helpers', () => {
   });
 
   it('binds topology actors to a gateway client without explicit generics', () => {
-    const logistics = defineActorWebTopology({
+    const logistics = defineTopology({
       contractVersion: '1.0.0',
       nodes: {
         server: node('logistics-server-runtime'),
@@ -154,7 +154,7 @@ describe('Actor-Web topology helpers', () => {
     });
     let socketsCreated = 0;
 
-    const client = createActorWebClient(logistics, {
+    const client = createClient(logistics, {
       gateway: { url: 'ws://example.invalid/gateway' },
       createSocket: () => {
         socketsCreated += 1;
@@ -169,9 +169,9 @@ describe('Actor-Web topology helpers', () => {
 
     expect(socketsCreated).toBe(0);
 
-    type InferredContext = ActorWebActorContext<typeof logistics.actors.shipment>;
-    type InferredCommand = ActorWebActorMessage<typeof logistics.actors.shipment>;
-    type InferredEvent = ActorWebActorEvent<typeof logistics.actors.shipment>;
+    type InferredContext = ActorContextOf<typeof logistics.actors.shipment>;
+    type InferredCommand = ActorMessageOf<typeof logistics.actors.shipment>;
+    type InferredEvent = ActorEventOf<typeof logistics.actors.shipment>;
 
     const typedSource: ActorSource<InferredContext, InferredCommand, InferredEvent> =
       client.actors.shipment;
@@ -184,7 +184,7 @@ describe('Actor-Web topology helpers', () => {
   });
 
   it('defaults topology read-model helpers to projection-only sources', () => {
-    const logistics = defineActorWebTopology({
+    const logistics = defineTopology({
       contractVersion: '1.0.0',
       nodes: {
         server: node('logistics-server-runtime'),
@@ -230,7 +230,7 @@ describe('Actor-Web topology helpers', () => {
   });
 
   it('provides typed actor-key-first topology source factories', async () => {
-    const logistics = defineActorWebTopology({
+    const logistics = defineTopology({
       contractVersion: '1.0.0',
       nodes: {
         server: node('logistics-server-runtime'),
@@ -245,9 +245,9 @@ describe('Actor-Web topology helpers', () => {
       },
     });
     const closes: string[] = [];
-    const closedSessionSockets: ActorWebGatewaySocket[] = [];
+    const closedSessionSockets: GatewaySocket[] = [];
     const sessionSockets: Array<
-      ActorWebGatewaySocket & {
+      GatewaySocket & {
         readonly sentFrames: Array<Record<string, unknown>>;
         emitOpen(): void;
         emitReady(connectionId: string): void;
@@ -354,7 +354,7 @@ describe('Actor-Web topology helpers', () => {
   });
 
   it('removes manually closed gateway client sources from client cleanup tracking', () => {
-    const logistics = defineActorWebTopology({
+    const logistics = defineTopology({
       contractVersion: '1.0.0',
       nodes: {
         server: node('logistics-server-runtime'),
@@ -370,7 +370,7 @@ describe('Actor-Web topology helpers', () => {
     });
     const closeCounts: number[] = [];
 
-    const client = createActorWebClient(logistics, {
+    const client = createClient(logistics, {
       gateway: { url: 'ws://example.invalid/gateway' },
       createSocket: () => {
         const socketIndex = closeCounts.length;
@@ -395,7 +395,7 @@ describe('Actor-Web topology helpers', () => {
   });
 
   it('closes topology session read models when command source creation fails', () => {
-    const logistics = defineActorWebTopology({
+    const logistics = defineTopology({
       contractVersion: '1.0.0',
       nodes: {
         server: node('logistics-server-runtime'),
@@ -436,7 +436,7 @@ describe('Actor-Web topology helpers', () => {
   });
 
   it('does not open unused topology client sources', () => {
-    const logistics = defineActorWebTopology({
+    const logistics = defineTopology({
       contractVersion: '1.0.0',
       nodes: {
         server: node('logistics-server-runtime'),
@@ -458,7 +458,7 @@ describe('Actor-Web topology helpers', () => {
     });
     let socketsCreated = 0;
 
-    const client = createActorWebClient(logistics, {
+    const client = createClient(logistics, {
       gateway: { url: 'ws://example.invalid/gateway' },
       createSocket: () => {
         socketsCreated += 1;
@@ -481,7 +481,7 @@ describe('Actor-Web topology helpers', () => {
   });
 
   it('offers a read-model client for browser projection consumers', () => {
-    const logistics = defineActorWebTopology({
+    const logistics = defineTopology({
       contractVersion: '1.0.0',
       nodes: {
         server: node('logistics-server-runtime'),
@@ -496,7 +496,7 @@ describe('Actor-Web topology helpers', () => {
       },
     });
 
-    const client = createActorWebReadModelClient(logistics, {
+    const client = createReadModelClient(logistics, {
       gateway: { url: 'ws://example.invalid/gateway' },
       createSocket: () => ({
         readyState: 1,
@@ -513,7 +513,7 @@ describe('Actor-Web topology helpers', () => {
 
   it('rejects actors and supervisors that reference unknown nodes', () => {
     expect(() =>
-      defineActorWebTopology({
+      defineTopology({
         nodes: {
           server: node('server-node'),
         },
@@ -524,7 +524,7 @@ describe('Actor-Web topology helpers', () => {
     ).toThrow('references unknown node "worker"');
 
     expect(() =>
-      defineActorWebTopology({
+      defineTopology({
         nodes: {
           server: node('server-node'),
         },
@@ -538,7 +538,7 @@ describe('Actor-Web topology helpers', () => {
 
   it('rejects supervisors that reference unknown child actors', () => {
     expect(() =>
-      defineActorWebTopology({
+      defineTopology({
         nodes: {
           server: node('server-node'),
         },
@@ -554,7 +554,7 @@ describe('Actor-Web topology helpers', () => {
 
   it('rejects actors that reference unknown topology tools when a catalog is declared', () => {
     expect(() =>
-      defineActorWebTopology({
+      defineTopology({
         tools: [tool('route.plan')],
         nodes: {
           server: node('server-node'),
@@ -571,7 +571,7 @@ describe('Actor-Web topology helpers', () => {
   });
 
   it('keeps object-shaped topology tools supported for generated clients', () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       tools: {
         'route.plan': tool('route.plan'),
       },
@@ -591,7 +591,7 @@ describe('Actor-Web topology helpers', () => {
   });
 
   it('allows explicit gateway scopes for public routing overrides', () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -620,7 +620,7 @@ describe('Actor-Web topology helpers', () => {
   });
 
   it('merges topology actor source params into the actor gateway scope', () => {
-    const logistics = defineActorWebTopology({
+    const logistics = defineTopology({
       nodes: {
         server: node('server-node'),
       },
@@ -639,7 +639,7 @@ describe('Actor-Web topology helpers', () => {
     let commandOpenListener = (): void => {};
     let messageListener = (_event: MessageEvent<string>): void => {};
     let commandMessageListener = (_event: MessageEvent<string>): void => {};
-    const socket: ActorWebGatewaySocket = {
+    const socket: GatewaySocket = {
       readyState: 1,
       send: (data: string) => {
         sourceFrames.push(JSON.parse(data) as unknown);
@@ -656,7 +656,7 @@ describe('Actor-Web topology helpers', () => {
         }
       },
     };
-    const commandSocket: ActorWebGatewaySocket = {
+    const commandSocket: GatewaySocket = {
       readyState: 1,
       send: (data: string) => {
         commandFrames.push(JSON.parse(data) as unknown);

@@ -39,7 +39,7 @@ export const MESH_PONG_MODE_PARITY_PROOF: Record<
   broadcast: {
     mode: 'broadcast',
     startupFile: 'modes/broadcast.ts',
-    startupCall: 'startActorWebNode(pong, { transport })',
+    startupCall: 'startNode(pong, { transport })',
     transportBoundary: 'BroadcastChannel transport',
     nodeLayout: 'host server / a / b / client; joiners client only',
   },

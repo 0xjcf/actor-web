@@ -62,7 +62,7 @@ contract versions, and production qualification are separate.
   - authorized claims settle as `not_dispatched`, `dispatch_succeeded`, or `dispatch_indeterminate`
   - these outcomes describe dispatch, not whether a remote effect committed
 - gateway transport surface
-  - `ActorWebNodeGatewayOptions.commandAdmission`
+  - `NodeGatewayOptions.commandAdmission`
   - `RuntimeGatewayClientFrame.send.metadata`
   - `RuntimeGatewayClientFrame.ask.metadata`
   - `RuntimeGatewayServerFrame.ack.authorization`

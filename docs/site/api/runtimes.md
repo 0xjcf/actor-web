@@ -47,7 +47,7 @@ Returns `{ system, transport, actors, requireActor, getGatewayUrl, getTransportU
 - `peers` / `connect` — static peer wiring.
 - `gateway.expose` — which actors are reachable by UI consumers.
 
-## `serveActorWebHttp(...)` <Badge type="warning" text="node" />
+## `serveHttp(...)` <Badge type="warning" text="node" />
 
 A REST ingress adapter that maps HTTP routes onto actor `send`/`ask`, for
 exposing actors over HTTP. See `@actor-web/runtime/node`.

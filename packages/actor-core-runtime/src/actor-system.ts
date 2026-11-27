@@ -174,8 +174,8 @@ export type ActorSupervisionStrategy = 'restart' | 'resume' | 'stop' | 'escalate
  *
  * `maxRestarts`/`withinMs` bound the `restart` strategy; when omitted, the
  * system-wide defaults apply (3 restarts within 30 seconds). Exceeding the
- * bound stops the actor permanently. The topology DSL's
- * `ActorWebSupervisionPolicy` is an alias of this type.
+ * bound stops the actor permanently. The topology and runtime entry points
+ * export the same policy type.
  */
 export interface ActorSupervisionPolicy {
   readonly strategy: ActorSupervisionStrategy;

@@ -1,4 +1,4 @@
-import { actor, defineActorWebTopology, node } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node } from '@actor-web/runtime/topology';
 
 export const lanes = ['checkout', 'profile'] as const;
 export type Lane = (typeof lanes)[number];
@@ -19,8 +19,8 @@ const nodes = {
   checkout: node('checkout-host'),
   profile: node('profile-host'),
 };
-export const topology = defineActorWebTopology({ nodes, actors: {} });
-export const views = defineActorWebTopology({
+export const topology = defineTopology({ nodes, actors: {} });
+export const views = defineTopology({
   nodes,
   actors: { checkout: view('checkout'), profile: view('profile') },
 });

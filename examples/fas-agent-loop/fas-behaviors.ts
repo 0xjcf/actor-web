@@ -1,9 +1,6 @@
 import type { LatticeEvent } from '@actor-web/lattice';
 import { defineBehavior, defineFSM } from '@actor-web/runtime/browser';
-import type {
-  ActorWebAllowedToolRegistry,
-  ActorWebTypedDefineActor,
-} from '@actor-web/runtime/topology';
+import type { AllowedToolRegistry, TypedDefineActor } from '@actor-web/runtime/topology';
 import type {
   FasAgentRole,
   FasPlan,
@@ -29,17 +26,17 @@ import {
 } from './fas-contract';
 import type { FasToolRegistry } from './fas-tool-adapters';
 
-type PlannerDefineActor = ActorWebTypedDefineActor<
-  ActorWebAllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.planner>
+type PlannerDefineActor = TypedDefineActor<
+  AllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.planner>
 >;
-type ImplementerDefineActor = ActorWebTypedDefineActor<
-  ActorWebAllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.implementer>
+type ImplementerDefineActor = TypedDefineActor<
+  AllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.implementer>
 >;
-type VerifierDefineActor = ActorWebTypedDefineActor<
-  ActorWebAllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.verifier>
+type VerifierDefineActor = TypedDefineActor<
+  AllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.verifier>
 >;
-type ReviewerDefineActor = ActorWebTypedDefineActor<
-  ActorWebAllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.reviewer>
+type ReviewerDefineActor = TypedDefineActor<
+  AllowedToolRegistry<FasToolRegistry, typeof FAS_AGENT_TOOL_ACCESS.reviewer>
 >;
 
 export type FasCoordinationMode = 'orchestration' | 'lattice' | 'hybrid';

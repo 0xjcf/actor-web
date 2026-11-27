@@ -28,7 +28,7 @@ with `reset`, or the `./portable`, `./runner` and `./zod` entry points.
 | `createLlmToolRegistry({ llm })` | Typed `llm` registration; the published `createActorAgentToolRegistry` name remains a deprecated alias |
 | `createActorAgentTools({ llm })` | Runtime-ready tool registry for `startRuntime(..., { tools })` |
 | `createLlmProvider({ endpoint, model, timeoutMs?, ... })` | Chat Completions adapter. An endpoint path that ends in `/responses` uses the Responses wire. The host supplies the endpoint, model, and headers |
-| `ACTOR_WEB_LLM_TOOL_NAME` | Stable tool name for the injected LLM provider |
+| `LLM_TOOL_NAME` | Stable tool name for the injected LLM provider |
 | `ModelToolDefinition` | Provider-facing tool metadata (`inputSchema`); `ActorAgentToolDefinition` is the deprecated name |
 | `ActorAgent*` types | Message, event, provider, tool-call, and error contracts |
 | `AgentTracePayload`, `AgentTraceEvent`, `AgentTraceEventMap` | Typed evaluation observations and their correlated runtime event envelope |
@@ -211,9 +211,9 @@ run/events, so saved runs can be re-scored without changing the original facts.
 ```ts
 import { createAgentLoopBehavior, createActorAgentTools } from '@actor-web/agent';
 import { startRuntime } from '@actor-web/runtime';
-import { actor, defineActorWebTopology, node } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node } from '@actor-web/runtime/topology';
 
-const topology = defineActorWebTopology({
+const topology = defineTopology({
   nodes: { local: node('local') },
   actors: {
     planner: actor({

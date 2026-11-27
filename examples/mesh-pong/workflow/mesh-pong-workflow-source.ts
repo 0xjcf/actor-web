@@ -1,4 +1,5 @@
 import type { ActorMessage, ActorRef } from '@actor-web/runtime';
+import { ask } from '@actor-web/runtime/browser';
 import type { ActorWebSource } from 'ignite-element/actor-web';
 import { igniteCore } from 'ignite-element/actor-web';
 import type {
@@ -187,7 +188,7 @@ export function createMeshPongWorkflowSource(
   const refresh = async (): Promise<MeshPongWorkflowState> => {
     const [roomResult, match] = await Promise.all([
       options.actors.room.ask<PongRoomResult>({ type: 'GET_ROOM' }),
-      options.actors.matchCoordinator.ask<PongMatchState>({ type: 'GET_MATCH' }),
+      ask(options.actors.matchCoordinator, { type: 'GET_MATCH' }),
     ]);
     if (roomResult.ok) applyRoom(roomResult.room);
     applyMatch(match);

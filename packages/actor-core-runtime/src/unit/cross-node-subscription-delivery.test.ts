@@ -14,7 +14,7 @@ import { wireOwnedActorWebSubscriptions } from '../actor-web-node-runtime.js';
 import { createActorSource } from '../integration/actor-source.js';
 import { Logger } from '../logger.js';
 import { createInMemoryMessageTransportNetwork } from '../testing/in-memory-message-transport.js';
-import { actor, defineActorWebTopology, node } from '../topology.js';
+import { actor, defineTopology, node } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 type PublisherMessage = { type: 'GO'; n?: number } | { type: 'OTHER' };
@@ -374,7 +374,7 @@ describe('wireOwnedActorWebSubscriptions cross-node branch', () => {
   });
 
   function crossNodeTopology() {
-    return defineActorWebTopology({
+    return defineTopology({
       nodes: { server: node('server'), worker: node('worker') },
       actors: {
         pub: actor({ id: 'pub', node: 'server', behavior: createPublisherBehavior }),

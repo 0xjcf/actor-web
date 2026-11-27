@@ -10,6 +10,8 @@ const __dirname = dirname(__filename);
 const packageRoot = resolve(__dirname, '..');
 const repoRoot = resolve(packageRoot, '../..');
 const releaseBase = 'origin/main';
+// This test builds and packs three real packages before exercising a clean consumer.
+const packAndConsumeTimeoutMs = 120_000;
 
 type CliPackageManifest = {
   name: string;
@@ -560,7 +562,7 @@ describe('@actor-web/cli release contract', () => {
     await writeFile(
       join(consumerDir, 'topology.mjs'),
       [
-        "import { actor, defineActorWebTopology, defineBehavior, node } from '@actor-web/runtime';",
+        "import { actor, defineTopology, defineBehavior, node } from '@actor-web/runtime';",
         '',
         'const counter = defineBehavior()',
         '  .withContext({ count: 0 })',
@@ -574,7 +576,7 @@ describe('@actor-web/cli release contract', () => {
         '    return {};',
         '  });',
         '',
-        'export default defineActorWebTopology({',
+        'export default defineTopology({',
         "  nodes: { local: node('local') },",
         "  actors: { counter: actor({ id: 'counter', node: 'local', behavior: counter }) },",
         '});',
@@ -618,7 +620,7 @@ describe('@actor-web/cli release contract', () => {
     await writeFile(
       apiSmokePath,
       [
-        "import { actor, createInMemoryAgentSessionCheckpointStore, defineActorWebTopology, defineBehavior, node } from '@actor-web/runtime';",
+        "import { actor, createInMemoryAgentSessionCheckpointStore, defineTopology, defineBehavior, node } from '@actor-web/runtime';",
         "import { createRuntimeHost } from '@actor-web/cli';",
         '',
         'const controlPlane = defineBehavior()',
@@ -688,7 +690,7 @@ describe('@actor-web/cli release contract', () => {
         '    return { reply: current };',
         '  });',
         '',
-        'const topology = defineActorWebTopology({',
+        'const topology = defineTopology({',
         "  nodes: { server: node('server') },",
         '  actors: {',
         '    controlPlaneSession: actor({',
@@ -854,5 +856,5 @@ describe('@actor-web/cli release contract', () => {
       expect(exportSmoke.stdout).toContain('"serve"');
       expect(exportSmoke.stdout).toContain('"info"');
     }
-  }, 15_000);
+  }, packAndConsumeTimeoutMs);
 });

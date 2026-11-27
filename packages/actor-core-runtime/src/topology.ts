@@ -7,12 +7,12 @@ import type {
 } from './actor-system.js';
 import type { ActorToolRegistry } from './actor-tools.js';
 import {
-  type ActorWebSourceOptions,
-  type ClosableActorWebReadModelSource,
-  type ClosableActorWebSource,
-  createActorWebCommandSource,
-  createActorWebReadModelSource,
-  createActorWebSource,
+  type ClosableReadModelSource,
+  type ClosableSource,
+  createGatewayCommandSource,
+  createGatewayReadModelSource,
+  createGatewaySource,
+  type GatewaySourceOptions,
 } from './actor-web-source.js';
 import type { RuntimeGatewayScopeDescriptor } from './runtime-gateway-shared.js';
 import {
@@ -21,25 +21,19 @@ import {
 } from './unified-actor-builder.js';
 import { Address } from './utils/factories.js';
 
-/**
- * Topology aliases of the runtime supervision types (one definition, shared
- * by the topology DSL and SpawnOptions). The node runtime threads the policy
- * from the actor descriptor into `system.spawn(behavior, { supervision })`.
- */
-export type ActorWebSupervisionStrategy = ActorSupervisionStrategy;
-export type ActorWebSupervisionPolicy = ActorSupervisionPolicy;
+export type {
+  ActorAddress,
+  ActorSupervisionPolicy,
+  ActorSupervisionStrategy,
+} from './actor-system.js';
 
-// The topology DSL's public address type collapses onto the single branded model
-// so the topology/examples surface can't build object literals that drift.
-export type ActorWebActorAddress = ActorAddress;
-
-type ClosableActorWebSourceLike = {
+type ClosableSourceLike = {
   close(): void;
 };
 
-export interface ActorWebSourceSession<
-  TReadModel extends ClosableActorWebSourceLike,
-  TCommands extends ClosableActorWebSourceLike,
+export interface SourceSession<
+  TReadModel extends ClosableSourceLike,
+  TCommands extends ClosableSourceLike,
 > {
   readonly readModel: TReadModel;
   readonly commands: TCommands;
@@ -47,9 +41,9 @@ export interface ActorWebSourceSession<
 }
 
 export function createActorWebSourceSession<
-  TReadModel extends ClosableActorWebSourceLike,
-  TCommands extends ClosableActorWebSourceLike,
->(readModel: TReadModel, commands: TCommands): ActorWebSourceSession<TReadModel, TCommands> {
+  TReadModel extends ClosableSourceLike,
+  TCommands extends ClosableSourceLike,
+>(readModel: TReadModel, commands: TCommands): SourceSession<TReadModel, TCommands> {
   let closed = false;
 
   return {
@@ -84,41 +78,39 @@ export function createActorWebSourceSession<
   };
 }
 
-export interface ActorWebToolDefinition<TName extends string = string> {
+export interface ToolDefinition<TName extends string = string> {
   readonly name: TName;
   readonly description?: string;
 }
 
-export type ActorWebToolReference<TName extends string = string> =
-  | TName
-  | ActorWebToolDefinition<TName>;
+export type ToolReference<TName extends string = string> = TName | ToolDefinition<TName>;
 
-export interface ActorWebNodeDefinition<TAddress extends string = string> {
+export interface NodeDefinition<TAddress extends string = string> {
   readonly address: TAddress;
 }
 
-export type ActorWebActorIdResolver<TParams = unknown> = {
+export type ActorIdResolver<TParams = unknown> = {
   bivarianceHack(params: TParams): string;
 }['bivarianceHack'];
 
-export type ActorWebActorId<TParams = unknown> = string | ActorWebActorIdResolver<TParams>;
+export type ActorId<TParams = unknown> = string | ActorIdResolver<TParams>;
 
-export type ActorWebActorInstanceParams<TActor> = TActor extends {
-  readonly id: ActorWebActorIdResolver<infer TParams>;
+export type ActorInstanceParams<TActor> = TActor extends {
+  readonly id: ActorIdResolver<infer TParams>;
 }
   ? TParams
   : never;
 
-export interface ActorWebActorDefinition<
-  TId extends ActorWebActorId = string,
+export interface ActorDefinition<
+  TId extends ActorId = string,
   TNode extends string = string,
   TBehavior = unknown,
 > {
   readonly id: TId;
   readonly node: TNode;
   readonly behavior?: TBehavior;
-  readonly supervision?: ActorWebSupervisionPolicy;
-  readonly tools?: readonly ActorWebToolReference[];
+  readonly supervision?: ActorSupervisionPolicy;
+  readonly tools?: readonly ToolReference[];
   readonly gateway?:
     | boolean
     | {
@@ -126,47 +118,43 @@ export interface ActorWebActorDefinition<
       };
 }
 
-export interface ActorWebParameterizedActorDefinition<
+export interface ParameterizedActorDefinition<
   TParams,
   TNode extends string = string,
   TBehavior = unknown,
 > extends Omit<
-    ActorWebActorDefinition<
-      ActorWebActorIdResolver<TParams>,
-      TNode,
-      (params: TParams) => TBehavior
-    >,
+    ActorDefinition<ActorIdResolver<TParams>, TNode, (params: TParams) => TBehavior>,
     'behavior'
   > {
   readonly behavior?: (params: TParams) => TBehavior;
 }
 
-export type ActorWebActorContext<TActor> = TActor extends {
+export type ActorContextOf<TActor> = TActor extends {
   readonly behavior?: infer TBehavior;
 }
-  ? ActorWebBehaviorContext<NonNullable<TBehavior>>
+  ? BehaviorContext<NonNullable<TBehavior>>
   : unknown;
 
-export type ActorWebActorMessage<TActor> = TActor extends {
+export type ActorMessageOf<TActor> = TActor extends {
   readonly behavior?: infer TBehavior;
 }
-  ? ActorWebBehaviorMessage<NonNullable<TBehavior>>
+  ? BehaviorMessage<NonNullable<TBehavior>>
   : ActorMessage;
 
-export type ActorWebActorEvent<TActor> = TActor extends {
+export type ActorEventOf<TActor> = TActor extends {
   readonly behavior?: infer TBehavior;
 }
-  ? ActorWebBehaviorEvent<NonNullable<TBehavior>>
+  ? BehaviorEvent<NonNullable<TBehavior>>
   : ActorMessage;
 
-type ActorWebBehaviorContext<TBehavior> = TBehavior extends (...args: infer _TArgs) => infer TReturn
-  ? ActorWebBehaviorContext<TReturn>
+type BehaviorContext<TBehavior> = TBehavior extends (...args: infer _TArgs) => infer TReturn
+  ? BehaviorContext<TReturn>
   : TBehavior extends { readonly __contextType: infer TContext }
     ? TContext
     : unknown;
 
-type ActorWebBehaviorMessage<TBehavior> = TBehavior extends (...args: infer _TArgs) => infer TReturn
-  ? ActorWebBehaviorMessage<TReturn>
+type BehaviorMessage<TBehavior> = TBehavior extends (...args: infer _TArgs) => infer TReturn
+  ? BehaviorMessage<TReturn>
   : TBehavior extends { readonly __messageType: infer TMessage }
     ? TMessage extends ActorMessage
       ? TMessage
@@ -177,8 +165,8 @@ type ActorWebBehaviorMessage<TBehavior> = TBehavior extends (...args: infer _TAr
         : ActorMessage
       : ActorMessage;
 
-type ActorWebBehaviorEvent<TBehavior> = TBehavior extends (...args: infer _TArgs) => infer TReturn
-  ? ActorWebBehaviorEvent<TReturn>
+type BehaviorEvent<TBehavior> = TBehavior extends (...args: infer _TArgs) => infer TReturn
+  ? BehaviorEvent<TReturn>
   : TBehavior extends { readonly __emittedType: infer TEmitted }
     ? TEmitted extends ActorMessage
       ? TEmitted
@@ -189,41 +177,39 @@ type ActorWebBehaviorEvent<TBehavior> = TBehavior extends (...args: infer _TArgs
         : ActorMessage
       : ActorMessage;
 
-export interface ActorWebActorDescriptor<
-  TId extends ActorWebActorId = ActorWebActorId,
+export interface ActorDescriptor<
+  TId extends ActorId = ActorId,
   TNode extends string = string,
   TBehavior = unknown,
-> extends ActorWebActorDefinition<TId, TNode, TBehavior> {
+> extends ActorDefinition<TId, TNode, TBehavior> {
   readonly key: string;
   readonly nodeAddress: string;
-  readonly address: ActorWebActorAddress;
+  readonly address: ActorAddress;
   readonly gateway?: {
     readonly scope: RuntimeGatewayScopeDescriptor;
   };
-  resolveId(
-    params?: ActorWebActorInstanceParams<ActorWebActorDescriptor<TId, TNode, TBehavior>>
-  ): string;
+  resolveId(params?: ActorInstanceParams<ActorDescriptor<TId, TNode, TBehavior>>): string;
   resolveAddress(
-    params?: ActorWebActorInstanceParams<ActorWebActorDescriptor<TId, TNode, TBehavior>>
-  ): ActorWebActorAddress;
+    params?: ActorInstanceParams<ActorDescriptor<TId, TNode, TBehavior>>
+  ): ActorAddress;
   source(
-    options: ActorWebSourceOptions
-  ): ClosableActorWebSource<
-    ActorWebBehaviorContext<NonNullable<TBehavior>>,
-    ActorWebBehaviorMessage<NonNullable<TBehavior>>,
-    ActorWebBehaviorEvent<NonNullable<TBehavior>>
+    options: GatewaySourceOptions
+  ): ClosableSource<
+    BehaviorContext<NonNullable<TBehavior>>,
+    BehaviorMessage<NonNullable<TBehavior>>,
+    BehaviorEvent<NonNullable<TBehavior>>
   >;
   session(
-    options: ActorWebSourceOptions
-  ): ActorWebSourceSession<
-    ClosableActorWebReadModelSource<
-      ActorWebBehaviorContext<NonNullable<TBehavior>>,
-      ActorWebBehaviorEvent<NonNullable<TBehavior>>
+    options: GatewaySourceOptions
+  ): SourceSession<
+    ClosableReadModelSource<
+      BehaviorContext<NonNullable<TBehavior>>,
+      BehaviorEvent<NonNullable<TBehavior>>
     >,
-    ClosableActorWebSource<
-      ActorWebBehaviorContext<NonNullable<TBehavior>>,
-      ActorWebBehaviorMessage<NonNullable<TBehavior>>,
-      ActorWebBehaviorEvent<NonNullable<TBehavior>>
+    ClosableSource<
+      BehaviorContext<NonNullable<TBehavior>>,
+      BehaviorMessage<NonNullable<TBehavior>>,
+      BehaviorEvent<NonNullable<TBehavior>>
     >
   >;
   /**
@@ -231,59 +217,57 @@ export interface ActorWebActorDescriptor<
    * snapshots/events/transport status without requiring command capability.
    */
   readModel(
-    options: ActorWebSourceOptions
-  ): ClosableActorWebReadModelSource<
-    ActorWebBehaviorContext<NonNullable<TBehavior>>,
-    ActorWebBehaviorEvent<NonNullable<TBehavior>>
+    options: GatewaySourceOptions
+  ): ClosableReadModelSource<
+    BehaviorContext<NonNullable<TBehavior>>,
+    BehaviorEvent<NonNullable<TBehavior>>
   >;
   /**
    * Explicit command/control source for hosts that intentionally send or ask.
    * Pair with readModel(...) instead of making every projection command-capable.
    */
   commands(
-    options: ActorWebSourceOptions
-  ): ClosableActorWebSource<
-    ActorWebBehaviorContext<NonNullable<TBehavior>>,
-    ActorWebBehaviorMessage<NonNullable<TBehavior>>,
-    ActorWebBehaviorEvent<NonNullable<TBehavior>>
+    options: GatewaySourceOptions
+  ): ClosableSource<
+    BehaviorContext<NonNullable<TBehavior>>,
+    BehaviorMessage<NonNullable<TBehavior>>,
+    BehaviorEvent<NonNullable<TBehavior>>
   >;
 }
 
-export interface ActorWebSupervisorDefinition<TNode extends string = string> {
+export interface SupervisorDefinition<TNode extends string = string> {
   readonly node: TNode;
   readonly strategy?: 'one-for-one' | 'one-for-all' | 'rest-for-one' | 'escalate';
   readonly children: readonly string[];
 }
 
-export interface ActorWebSupervisorDescriptor<TNode extends string = string>
-  extends ActorWebSupervisorDefinition<TNode> {
+export interface SupervisorDescriptor<TNode extends string = string>
+  extends SupervisorDefinition<TNode> {
   readonly key: string;
   readonly nodeAddress: string;
-  /** Defaulted to 'one-for-one' by defineActorWebTopology when omitted. */
+  /** Defaulted to 'one-for-one' by defineTopology when omitted. */
   readonly strategy: 'one-for-one' | 'one-for-all' | 'rest-for-one' | 'escalate';
 }
 
-export type ActorWebTopologySourceFactoryInput = ActorWebSourceOptions;
+export type TopologySourceFactoryInput = GatewaySourceOptions;
 
-export type ActorWebTopologyActorSource<TActor extends ActorWebActorDescriptor> =
-  ClosableActorWebSource<
-    ActorWebActorContext<TActor>,
-    ActorWebActorMessage<TActor>,
-    ActorWebActorEvent<TActor>
-  >;
+export type TopologyActorSource<TActor extends ActorDescriptor> = ClosableSource<
+  ActorContextOf<TActor>,
+  ActorMessageOf<TActor>,
+  ActorEventOf<TActor>
+>;
 
-export type ActorWebTopologyActorReadModel<TActor extends ActorWebActorDescriptor> =
-  ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>;
+export type TopologyActorReadModel<TActor extends ActorDescriptor> = ClosableReadModelSource<
+  ActorContextOf<TActor>,
+  ActorEventOf<TActor>
+>;
 
-export type ActorWebTopologyActorSession<TActor extends ActorWebActorDescriptor> =
-  ActorWebSourceSession<
-    ActorWebTopologyActorReadModel<TActor>,
-    ActorWebTopologyActorSource<TActor>
-  >;
+export type TopologyActorSession<TActor extends ActorDescriptor> = SourceSession<
+  TopologyActorReadModel<TActor>,
+  TopologyActorSource<TActor>
+>;
 
-export type ActorWebToolCatalogInput =
-  | readonly ActorWebToolDefinition[]
-  | Record<string, ActorWebToolDefinition>;
+export type ToolCatalogInput = readonly ToolDefinition[] | Record<string, ToolDefinition>;
 
 /**
  * Declares that a publisher actor's emitted events should be delivered to one or
@@ -292,193 +276,175 @@ export type ActorWebToolCatalogInput =
  * `from`/`to` reference actor keys in the topology; `events` filters by event
  * type (omit/empty = all events from `from`).
  */
-export interface ActorWebSubscriptionDefinition {
+export interface SubscriptionDefinition {
   readonly from: string;
   readonly to: string | readonly string[];
   readonly events?: readonly string[];
 }
 
-export type ActorWebTopologyInput = {
+export type TopologyInput = {
   readonly contractVersion?: string;
-  readonly tools?: ActorWebToolCatalogInput;
-  readonly nodes: Record<string, ActorWebNodeDefinition>;
-  readonly actors: Record<
-    string,
-    ActorWebActorDefinition<ActorWebActorId> | ActorWebParameterizedActorDefinition<unknown>
-  >;
-  readonly supervisors?: Record<string, ActorWebSupervisorDefinition>;
-  readonly subscriptions?: readonly ActorWebSubscriptionDefinition[];
+  readonly tools?: ToolCatalogInput;
+  readonly nodes: Record<string, NodeDefinition>;
+  readonly actors: Record<string, ActorDefinition<ActorId> | ParameterizedActorDefinition<unknown>>;
+  readonly supervisors?: Record<string, SupervisorDefinition>;
+  readonly subscriptions?: readonly SubscriptionDefinition[];
 };
 
-type ActorWebToolCatalogFromArray<TTools extends readonly ActorWebToolDefinition[]> = {
+type ToolCatalogFromArray<TTools extends readonly ToolDefinition[]> = {
   readonly [TTool in TTools[number] as TTool['name']]: TTool;
 };
 
-type ActorWebToolNameFromReference<TTool extends ActorWebToolReference> = TTool extends string
+type ToolNameFromReference<TTool extends ToolReference> = TTool extends string
   ? TTool
-  : TTool extends ActorWebToolDefinition<infer TName>
+  : TTool extends ToolDefinition<infer TName>
     ? TName
     : never;
 
-type ActorWebToolNamesFromReferences<TTools extends readonly ActorWebToolReference[] | undefined> =
-  TTools extends readonly ActorWebToolReference[]
-    ? ActorWebToolNameFromReference<TTools[number]>
-    : never;
+type ToolNamesFromReferences<TTools extends readonly ToolReference[] | undefined> =
+  TTools extends readonly ToolReference[] ? ToolNameFromReference<TTools[number]> : never;
 
-export type ActorWebAllowedToolRegistry<
+export type AllowedToolRegistry<
   TRegistry extends ActorToolRegistry,
-  TTools extends readonly ActorWebToolReference[] | undefined,
-> = Pick<TRegistry, Extract<ActorWebToolNamesFromReferences<TTools>, keyof TRegistry>>;
+  TTools extends readonly ToolReference[] | undefined,
+> = Pick<TRegistry, Extract<ToolNamesFromReferences<TTools>, keyof TRegistry>>;
 
-export type ActorWebTypedDefineActor<TTools extends ActorToolRegistry> = <
+export type TypedDefineActor<TTools extends ActorToolRegistry> = <
   TMsg extends ActorMessage = ActorMessage,
   TEmitted = unknown,
 >() => UnifiedActorBuilder<TMsg, TEmitted, unknown, TTools>;
 
-type ActorWebToolScopedActorDefinition<
+type ToolScopedActorDefinition<
   TRegistry extends ActorToolRegistry,
-  TTools extends readonly ActorWebToolReference[],
+  TTools extends readonly ToolReference[],
   TId extends string = string,
   TNode extends string = string,
   TBehavior = unknown,
-> = Omit<ActorWebActorDefinition<TId, TNode, TBehavior>, 'behavior' | 'tools'> & {
+> = Omit<ActorDefinition<TId, TNode, TBehavior>, 'behavior' | 'tools'> & {
   readonly tools: TTools;
   readonly behavior: (
-    defineBehavior: ActorWebTypedDefineActor<ActorWebAllowedToolRegistry<TRegistry, TTools>>
+    defineBehavior: TypedDefineActor<AllowedToolRegistry<TRegistry, TTools>>
   ) => TBehavior;
 };
 
-type ActorWebToolScopedParameterizedActorDefinition<
+type ToolScopedParameterizedActorDefinition<
   TRegistry extends ActorToolRegistry,
-  TTools extends readonly ActorWebToolReference[],
+  TTools extends readonly ToolReference[],
   TParams,
   TNode extends string = string,
   TBehavior = unknown,
-> = Omit<ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>, 'behavior' | 'tools'> & {
+> = Omit<ParameterizedActorDefinition<TParams, TNode, TBehavior>, 'behavior' | 'tools'> & {
   readonly tools: TTools;
   readonly behavior: (
     params: TParams,
-    defineBehavior: ActorWebTypedDefineActor<ActorWebAllowedToolRegistry<TRegistry, TTools>>
+    defineBehavior: TypedDefineActor<AllowedToolRegistry<TRegistry, TTools>>
   ) => TBehavior;
 };
 
-type ActorWebToolScopedActor<
-  TTools extends readonly ActorWebToolReference[],
+type ToolScopedActor<
+  TTools extends readonly ToolReference[],
   TId extends string,
   TNode extends string,
   TBehavior,
-> = Omit<ActorWebActorDefinition<TId, TNode, TBehavior>, 'behavior' | 'tools'> & {
+> = Omit<ActorDefinition<TId, TNode, TBehavior>, 'behavior' | 'tools'> & {
   readonly tools: TTools;
   readonly behavior: TBehavior;
 };
 
-type ActorWebToolScopedParameterizedActor<
-  TTools extends readonly ActorWebToolReference[],
+type ToolScopedParameterizedActor<
+  TTools extends readonly ToolReference[],
   TParams,
   TNode extends string,
   TBehavior,
-> = Omit<ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>, 'behavior' | 'tools'> & {
+> = Omit<ParameterizedActorDefinition<TParams, TNode, TBehavior>, 'behavior' | 'tools'> & {
   readonly tools: TTools;
   readonly behavior: (params: TParams) => TBehavior;
 };
 
-type ActorWebToolScopedActorHelper<TRegistry extends ActorToolRegistry> = {
+type ToolScopedActorHelper<TRegistry extends ActorToolRegistry> = {
   <
-    const TTools extends readonly ActorWebToolReference[],
+    const TTools extends readonly ToolReference[],
     const TId extends string,
     const TNode extends string,
     TBehavior,
   >(
-    definition: ActorWebToolScopedActorDefinition<TRegistry, TTools, TId, TNode, TBehavior>
-  ): ActorWebToolScopedActor<TTools, TId, TNode, TBehavior>;
-  <
-    const TTools extends readonly ActorWebToolReference[],
-    TParams,
-    const TNode extends string,
-    TBehavior,
-  >(
-    definition: ActorWebToolScopedParameterizedActorDefinition<
-      TRegistry,
-      TTools,
-      TParams,
-      TNode,
-      TBehavior
-    >
-  ): ActorWebToolScopedParameterizedActor<TTools, TParams, TNode, TBehavior>;
+    definition: ToolScopedActorDefinition<TRegistry, TTools, TId, TNode, TBehavior>
+  ): ToolScopedActor<TTools, TId, TNode, TBehavior>;
+  <const TTools extends readonly ToolReference[], TParams, const TNode extends string, TBehavior>(
+    definition: ToolScopedParameterizedActorDefinition<TRegistry, TTools, TParams, TNode, TBehavior>
+  ): ToolScopedParameterizedActor<TTools, TParams, TNode, TBehavior>;
 };
 
-type ActorWebTopologyTools<TInput extends ActorWebTopologyInput> = TInput extends {
+type TopologyTools<TInput extends TopologyInput> = TInput extends {
   readonly tools: infer TTools;
 }
-  ? TTools extends readonly ActorWebToolDefinition[]
-    ? ActorWebToolCatalogFromArray<TTools>
-    : TTools extends Record<string, ActorWebToolDefinition>
+  ? TTools extends readonly ToolDefinition[]
+    ? ToolCatalogFromArray<TTools>
+    : TTools extends Record<string, ToolDefinition>
       ? TTools
       : Record<string, never>
   : Record<string, never>;
 
-type ActorWebTopologyActor<
-  TInput extends ActorWebTopologyInput,
+type TopologyActor<
+  TInput extends TopologyInput,
   TKey extends keyof TInput['actors'] & string,
-> = ActorWebActorDescriptor<
+> = ActorDescriptor<
   TInput['actors'][TKey]['id'],
   TInput['actors'][TKey]['node'],
   TInput['actors'][TKey] extends { readonly behavior?: infer TBehavior } ? TBehavior : unknown
 >;
 
-export type ActorWebTopology<TInput extends ActorWebTopologyInput> = {
+export type Topology<TInput extends TopologyInput> = {
   readonly contractVersion?: string;
-  readonly tools: ActorWebTopologyTools<TInput>;
+  readonly tools: TopologyTools<TInput>;
   readonly nodes: TInput['nodes'];
   readonly actors: {
-    readonly [K in keyof TInput['actors']]: ActorWebActorDescriptor<
+    readonly [K in keyof TInput['actors']]: ActorDescriptor<
       TInput['actors'][K]['id'],
       TInput['actors'][K]['node'],
       TInput['actors'][K] extends { readonly behavior?: infer TBehavior } ? TBehavior : unknown
     >;
   };
   readonly supervisors: {
-    readonly [K in keyof NonNullable<TInput['supervisors']>]: ActorWebSupervisorDescriptor;
+    readonly [K in keyof NonNullable<TInput['supervisors']>]: SupervisorDescriptor;
   };
-  readonly subscriptions: readonly ActorWebSubscriptionDefinition[];
+  readonly subscriptions: readonly SubscriptionDefinition[];
   source<TKey extends keyof TInput['actors'] & string>(
     key: TKey,
-    options: ActorWebTopologySourceFactoryInput
-  ): ActorWebTopologyActorSource<ActorWebTopologyActor<TInput, TKey>>;
+    options: TopologySourceFactoryInput
+  ): TopologyActorSource<TopologyActor<TInput, TKey>>;
   readModel<TKey extends keyof TInput['actors'] & string>(
     key: TKey,
-    options: ActorWebTopologySourceFactoryInput
-  ): ActorWebTopologyActorReadModel<ActorWebTopologyActor<TInput, TKey>>;
+    options: TopologySourceFactoryInput
+  ): TopologyActorReadModel<TopologyActor<TInput, TKey>>;
   commands<TKey extends keyof TInput['actors'] & string>(
     key: TKey,
-    options: ActorWebTopologySourceFactoryInput
-  ): ActorWebTopologyActorSource<ActorWebTopologyActor<TInput, TKey>>;
+    options: TopologySourceFactoryInput
+  ): TopologyActorSource<TopologyActor<TInput, TKey>>;
   session<TKey extends keyof TInput['actors'] & string>(
     key: TKey,
-    options: ActorWebTopologySourceFactoryInput
-  ): ActorWebTopologyActorSession<ActorWebTopologyActor<TInput, TKey>>;
+    options: TopologySourceFactoryInput
+  ): TopologyActorSession<TopologyActor<TInput, TKey>>;
 };
 
-export function node<TAddress extends string>(address: TAddress): ActorWebNodeDefinition<TAddress> {
+export function node<TAddress extends string>(address: TAddress): NodeDefinition<TAddress> {
   return { address };
 }
 
-function actorDefinition<TDefinition extends ActorWebActorDefinition<string>>(
+function actorDefinition<TDefinition extends ActorDefinition<string>>(
   definition: TDefinition
 ): TDefinition;
 function actorDefinition<TParams, TNode extends string, TBehavior>(
-  definition: ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>
-): ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>;
+  definition: ParameterizedActorDefinition<TParams, TNode, TBehavior>
+): ParameterizedActorDefinition<TParams, TNode, TBehavior>;
 function actorDefinition(
-  definition:
-    | ActorWebActorDefinition<ActorWebActorId>
-    | ActorWebParameterizedActorDefinition<unknown>
-): ActorWebActorDefinition<ActorWebActorId> | ActorWebParameterizedActorDefinition<unknown> {
+  definition: ActorDefinition<ActorId> | ParameterizedActorDefinition<unknown>
+): ActorDefinition<ActorId> | ParameterizedActorDefinition<unknown> {
   return definition;
 }
 
 function createToolScopedActor<TRegistry extends ActorToolRegistry>() {
-  type RuntimeDefineActor = ActorWebTypedDefineActor<ActorToolRegistry>;
+  type RuntimeDefineActor = TypedDefineActor<ActorToolRegistry>;
   type RuntimeDefinition = Readonly<
     Record<string, unknown> & {
       id: string | ((params: unknown) => string);
@@ -499,7 +465,7 @@ function createToolScopedActor<TRegistry extends ActorToolRegistry>() {
       return actorDefinition({
         ...definition,
         behavior: (params: unknown) => parameterizedBehavior(params, defineBehavior),
-      } as ActorWebParameterizedActorDefinition<unknown, string, unknown>);
+      } as ParameterizedActorDefinition<unknown, string, unknown>);
     }
 
     const behavior = definition.behavior as (defineBehavior: RuntimeDefineActor) => unknown;
@@ -507,25 +473,25 @@ function createToolScopedActor<TRegistry extends ActorToolRegistry>() {
     return actorDefinition({
       ...definition,
       behavior: behavior(defineBehavior),
-    } as ActorWebActorDefinition<string, string, unknown>);
+    } as ActorDefinition<string, string, unknown>);
   };
 
-  return scopedActor as ActorWebToolScopedActorHelper<TRegistry>;
+  return scopedActor as ToolScopedActorHelper<TRegistry>;
 }
 
 type ActorHelper = {
-  <TDefinition extends ActorWebActorDefinition<string>>(definition: TDefinition): TDefinition;
+  <TDefinition extends ActorDefinition<string>>(definition: TDefinition): TDefinition;
   <TParams, TNode extends string, TBehavior>(
-    definition: ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>
-  ): ActorWebParameterizedActorDefinition<TParams, TNode, TBehavior>;
-  withTools<TRegistry extends ActorToolRegistry>(): ActorWebToolScopedActorHelper<TRegistry>;
+    definition: ParameterizedActorDefinition<TParams, TNode, TBehavior>
+  ): ParameterizedActorDefinition<TParams, TNode, TBehavior>;
+  withTools<TRegistry extends ActorToolRegistry>(): ToolScopedActorHelper<TRegistry>;
 };
 
 export const actor: ActorHelper = Object.assign(actorDefinition, {
   withTools: createToolScopedActor,
 });
 
-export function supervisor<TDefinition extends ActorWebSupervisorDefinition>(
+export function supervisor<TDefinition extends SupervisorDefinition>(
   definition: TDefinition
 ): TDefinition {
   return definition;
@@ -533,8 +499,8 @@ export function supervisor<TDefinition extends ActorWebSupervisorDefinition>(
 
 export function tool<TName extends string>(
   name: TName,
-  options: Omit<ActorWebToolDefinition<TName>, 'name'> = {}
-): ActorWebToolDefinition<TName> {
+  options: Omit<ToolDefinition<TName>, 'name'> = {}
+): ToolDefinition<TName> {
   return {
     name,
     ...options,
@@ -542,23 +508,23 @@ export function tool<TName extends string>(
 }
 
 function normalizeActorWebToolCatalog(
-  tools: ActorWebToolCatalogInput | undefined
-): Record<string, ActorWebToolDefinition> {
+  tools: ToolCatalogInput | undefined
+): Record<string, ToolDefinition> {
   if (!tools) {
     return {};
   }
 
   if (Array.isArray(tools)) {
     return Object.fromEntries(
-      tools.map((toolDefinition: ActorWebToolDefinition) => [toolDefinition.name, toolDefinition])
+      tools.map((toolDefinition: ToolDefinition) => [toolDefinition.name, toolDefinition])
     );
   }
 
-  return tools as Record<string, ActorWebToolDefinition>;
+  return tools as Record<string, ToolDefinition>;
 }
 
 /** The `type` literal union a publisher actor can emit (falls back to string). */
-type ActorWebEmittedEventType<TActorDefinition> = ActorWebActorEvent<TActorDefinition> extends {
+type EmittedEventType<TActorDefinition> = ActorEventOf<TActorDefinition> extends {
   readonly type: infer TType extends string;
 }
   ? TType
@@ -569,19 +535,19 @@ type ActorWebEmittedEventType<TActorDefinition> = ActorWebActorEvent<TActorDefin
  * constrained to the `from` actor's emitted-event types. Expressed as a union of
  * per-publisher shapes so `events` is checked against the chosen `from`.
  */
-type ActorWebTypedSubscription<TActors> = {
+type TypedSubscription<TActors> = {
   [K in keyof TActors & string]: {
     readonly from: K;
     readonly to: (keyof TActors & string) | readonly (keyof TActors & string)[];
-    readonly events?: readonly ActorWebEmittedEventType<TActors[K]>[];
+    readonly events?: readonly EmittedEventType<TActors[K]>[];
   };
 }[keyof TActors & string];
 
-export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
+export function defineTopology<TInput extends TopologyInput>(
   input: TInput & {
-    readonly subscriptions?: readonly ActorWebTypedSubscription<TInput['actors']>[];
+    readonly subscriptions?: readonly TypedSubscription<TInput['actors']>[];
   }
-): ActorWebTopology<TInput> {
+): Topology<TInput> {
   const toolCatalog = normalizeActorWebToolCatalog(input.tools);
   const actors = Object.fromEntries(
     Object.entries(input.actors).map(([key, definition]) => {
@@ -611,11 +577,11 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
         return actorId;
       };
       const descriptorId = typeof actorId === 'function' ? key : actorId;
-      const resolveAddress = (params?: unknown): ActorWebActorAddress => {
+      const resolveAddress = (params?: unknown): ActorAddress => {
         const id = resolveId(params);
         return Address.from({ id, node: nodeDefinition.address });
       };
-      const address: ActorWebActorAddress = Address.from({
+      const address: ActorAddress = Address.from({
         id: descriptorId,
         node: nodeDefinition.address,
       });
@@ -637,20 +603,20 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
           resolveId,
           resolveAddress,
           ...(gateway ? { gateway } : {}),
-          source(options: ActorWebSourceOptions): ClosableActorWebSource {
-            return createActorWebSource({
+          source(options: GatewaySourceOptions): ClosableSource {
+            return createGatewaySource({
               actor: this,
               ...options,
             });
           },
-          session(options: ActorWebSourceOptions) {
-            const readModel = createActorWebReadModelSource({
+          session(options: GatewaySourceOptions) {
+            const readModel = createGatewayReadModelSource({
               actor: this,
               ...options,
             });
-            let commands: ClosableActorWebSource;
+            let commands: ClosableSource;
             try {
-              commands = createActorWebCommandSource({
+              commands = createGatewayCommandSource({
                 actor: this,
                 ...options,
               });
@@ -661,14 +627,14 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
 
             return createActorWebSourceSession(readModel, commands);
           },
-          readModel(options: ActorWebSourceOptions): ClosableActorWebReadModelSource {
-            return createActorWebReadModelSource({
+          readModel(options: GatewaySourceOptions): ClosableReadModelSource {
+            return createGatewayReadModelSource({
               actor: this,
               ...options,
             });
           },
-          commands(options: ActorWebSourceOptions): ClosableActorWebSource {
-            return createActorWebCommandSource({
+          commands(options: GatewaySourceOptions): ClosableSource {
+            return createGatewayCommandSource({
               actor: this,
               ...options,
             });
@@ -711,8 +677,8 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
   );
   const requireActorDescriptor = <TKey extends keyof TInput['actors'] & string>(
     key: TKey
-  ): ActorWebTopologyActor<TInput, TKey> => {
-    const actorDescriptor = actors[key] as ActorWebTopologyActor<TInput, TKey> | undefined;
+  ): TopologyActor<TInput, TKey> => {
+    const actorDescriptor = actors[key] as TopologyActor<TInput, TKey> | undefined;
     if (!actorDescriptor) {
       throw new Error(`Actor-Web topology does not define actor "${String(key)}".`);
     }
@@ -722,10 +688,10 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
 
   return {
     contractVersion: input.contractVersion,
-    tools: toolCatalog as ActorWebTopologyTools<TInput>,
+    tools: toolCatalog as TopologyTools<TInput>,
     nodes: input.nodes,
-    actors: actors as ActorWebTopology<TInput>['actors'],
-    supervisors: supervisors as ActorWebTopology<TInput>['supervisors'],
+    actors: actors as Topology<TInput>['actors'],
+    supervisors: supervisors as Topology<TInput>['supervisors'],
     subscriptions: input.subscriptions ?? [],
     source(key, options) {
       return requireActorDescriptor(key).source(options);
@@ -741,3 +707,46 @@ export function defineActorWebTopology<TInput extends ActorWebTopologyInput>(
     },
   };
 }
+
+export type {
+  /** @deprecated Use ActorAddress instead. */
+  ActorAddress as ActorWebActorAddress,
+  /** @deprecated Use ActorContextOf instead. */
+  ActorContextOf as ActorWebActorContext,
+  /** @deprecated Use ActorDefinition instead. */
+  ActorDefinition as ActorWebActorDefinition,
+  /** @deprecated Use ActorDescriptor instead. */
+  ActorDescriptor as ActorWebActorDescriptor,
+  /** @deprecated Use ActorEventOf instead. */
+  ActorEventOf as ActorWebActorEvent,
+  /** @deprecated Use ActorMessageOf instead. */
+  ActorMessageOf as ActorWebActorMessage,
+  /** @deprecated Use NodeDefinition instead. */
+  NodeDefinition as ActorWebNodeDefinition,
+  /** @deprecated Use ActorSupervisionPolicy instead. */
+  ActorSupervisionPolicy as ActorWebSupervisionPolicy,
+  /** @deprecated Use ActorSupervisionStrategy instead. */
+  ActorSupervisionStrategy as ActorWebSupervisionStrategy,
+  /** @deprecated Use SupervisorDefinition instead. */
+  SupervisorDefinition as ActorWebSupervisorDefinition,
+  /** @deprecated Use SupervisorDescriptor instead. */
+  SupervisorDescriptor as ActorWebSupervisorDescriptor,
+  /** @deprecated Use Topology instead. */
+  Topology as ActorWebTopology,
+  /** @deprecated Use TopologyInput instead. */
+  TopologyInput as ActorWebTopologyInput,
+  /** @deprecated Use AllowedToolRegistry instead. */
+  AllowedToolRegistry as ActorWebAllowedToolRegistry,
+  /** @deprecated Use ToolCatalogInput instead. */
+  ToolCatalogInput as ActorWebToolCatalogInput,
+  /** @deprecated Use ToolDefinition instead. */
+  ToolDefinition as ActorWebToolDefinition,
+  /** @deprecated Use ToolReference instead. */
+  ToolReference as ActorWebToolReference,
+  /** @deprecated Use TypedDefineActor instead. */
+  TypedDefineActor as ActorWebTypedDefineActor,
+};
+export {
+  /** @deprecated Use defineTopology instead. */
+  defineTopology as defineActorWebTopology,
+};

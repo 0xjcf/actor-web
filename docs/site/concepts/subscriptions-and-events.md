@@ -82,7 +82,7 @@ topology instead: the runtime wires them on start and tears them down on stop, s
 the wiring is durable (re-established on every start) and type-checked.
 
 ```ts
-defineActorWebTopology({
+defineTopology({
   actors: { compare, pipeline, actorSystem },
   subscriptions: [
     { from: 'compare', to: ['actorSystem', 'pipeline'], events: ['OUTCOME_RESOLVED'] },

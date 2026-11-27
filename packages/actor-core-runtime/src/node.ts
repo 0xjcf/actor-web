@@ -30,11 +30,20 @@ export type {
   ActorWebGatewaySocket,
   ActorWebSourceGatewayOptions,
   ActorWebSourceOptions,
+  AddressSourceInput,
   ClosableActorWebCommandSource,
   ClosableActorWebReadModelSource,
   ClosableActorWebSource,
   ClosableActorWebSourceHandle,
   ClosableActorWebTraceSource,
+  ClosableCommandSource,
+  ClosableReadModelSource,
+  ClosableSource,
+  ClosableSourceHandle,
+  ClosableTraceSource,
+  GatewaySocket,
+  GatewaySourceOptions,
+  SourceGatewayOptions,
 } from './actor-web-source.js';
 export {
   createActorWebCommandSource,
@@ -42,6 +51,11 @@ export {
   createActorWebSource,
   createActorWebSourceHandle,
   createActorWebTraceSource,
+  createGatewayCommandSource,
+  createGatewayReadModelSource,
+  createGatewaySource,
+  createGatewayTraceSource,
+  createSourceHandle,
 } from './actor-web-source.js';
 export type {
   AgentExecutionAdmissionDecision,
@@ -333,14 +347,31 @@ export type {
   ActorWebHttpResponse,
   ActorWebHttpResponseResult,
   ActorWebHttpRouter,
+  BoundHttpContext,
+  BoundHttpHandler,
+  BoundHttpRouter,
+  HttpActors,
+  HttpContext,
+  HttpHandler,
+  HttpListenOptions,
+  HttpMethod,
+  HttpRequest,
+  HttpResponse,
+  HttpResponseResult,
+  HttpRouter,
   ServedActorWebHttp,
+  ServedHttp,
 } from './serve-actor-web-http.js';
-export { serveActorWebHttp } from './serve-actor-web-http.js';
+export { serveActorWebHttp, serveHttp } from './serve-actor-web-http.js';
 export type {
   ActorWebNodeGatewayOptions,
   ActorWebNodeTransportOptions,
+  NodeGatewayOptions,
+  NodeTransportOptions,
   ServeActorWebNodeOptions,
   ServedActorWebNode,
+  ServedNode,
+  ServeNodeOptions,
 } from './serve-actor-web-node.js';
 export { serveNode } from './serve-actor-web-node.js';
 export type {

@@ -1,6 +1,6 @@
 ---
 title: Topology, nodes & supervisors
-description: Declaring where actors run and how they are grouped with defineActorWebTopology.
+description: Declaring where actors run and how they are grouped with defineTopology.
 ---
 
 # Topology, nodes & supervisors
@@ -10,9 +10,9 @@ A **topology** is a declarative description of your system: which runtime
 It's the one place that owns placement and lifecycle.
 
 ```ts
-import { defineActorWebTopology, actor, node, supervisor, tool } from '@actor-web/runtime/topology';
+import { defineTopology, actor, node, supervisor, tool } from '@actor-web/runtime/topology';
 
-export const topology = defineActorWebTopology({
+export const topology = defineTopology({
   contractVersion: '0.1.0',
   nodes: { local: node('local') },
   tools: [tool('repo.diff'), tool('verification.run')],

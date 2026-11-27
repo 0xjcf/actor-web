@@ -1,4 +1,4 @@
-import { type ActorWebActorDefinition, actor } from '@actor-web/runtime/topology';
+import { type ActorDefinition, actor } from '@actor-web/runtime/topology';
 import { createLatticeActor, type LatticeJournal } from './lattice-actor.js';
 import type { DependencyDefinition } from './protocol.js';
 
@@ -9,7 +9,7 @@ type LatticeDependencyActorDefinition<
   TId extends string,
   TNode extends string,
   TBehavior,
-> = ActorWebActorDefinition<TId, TNode, TBehavior> & {
+> = ActorDefinition<TId, TNode, TBehavior> & {
   readonly dependencies: readonly DependencyDefinition[];
 };
 
@@ -52,7 +52,7 @@ function attachDependencies<TDefinition extends object>(
 
 export function dependsOn<TId extends string, TNode extends string, TBehavior>(
   definition: LatticeDependencyActorDefinition<TId, TNode, TBehavior>
-): ActorWebActorDefinition<TId, TNode, TBehavior> & LatticeDependencyMetadata {
+): ActorDefinition<TId, TNode, TBehavior> & LatticeDependencyMetadata {
   const { dependencies: bakedDependencies, ...actorDefinition } = definition;
   return attachDependencies(actor(actorDefinition), bakedDependencies);
 }

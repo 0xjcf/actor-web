@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ActorMessage, MessageTransport } from '../actor-system.js';
 import { createInMemoryRuntimePeerDiscoveryProvider } from '../runtime-peer-discovery.js';
 import { createInMemoryRuntimeTransportIdempotencyProvider } from '../runtime-transport-idempotency.js';
-import { startActorWebNode } from '../start-actor-web-node.js';
-import { actor, defineActorWebTopology, node, tool } from '../topology.js';
+import { startNode } from '../start-actor-web-node.js';
+import { actor, defineTopology, node, tool } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 type CounterCommand =
@@ -98,9 +98,9 @@ function createCounterBehavior() {
     .build();
 }
 
-describe('startActorWebNode', () => {
+describe('startNode', () => {
   it('starts a browser-safe topology node and spawns owned actors', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         worker: node('worker-node'),
@@ -120,7 +120,7 @@ describe('startActorWebNode', () => {
       },
     });
 
-    const workerNode = await startActorWebNode(topology, {
+    const workerNode = await startNode(topology, {
       node: 'worker',
       transport: {
         heartbeatIntervalMs: 0,
@@ -156,7 +156,7 @@ describe('startActorWebNode', () => {
   });
 
   it('rejects owned actors without behavior', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         worker: node('worker-node'),
       },
@@ -168,13 +168,13 @@ describe('startActorWebNode', () => {
       },
     });
 
-    await expect(startActorWebNode(topology, { node: 'worker' })).rejects.toThrow(
+    await expect(startNode(topology, { node: 'worker' })).rejects.toThrow(
       'does not declare behavior'
     );
   });
 
   it('starts a topology node with a supplied MessageTransport', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         serviceWorker: node('service-worker-node'),
       },
@@ -187,7 +187,7 @@ describe('startActorWebNode', () => {
       },
     });
     const transport = new TestMessageTransport();
-    const serviceWorkerNode = await startActorWebNode(topology, {
+    const serviceWorkerNode = await startNode(topology, {
       node: 'serviceWorker',
       transport,
     });
@@ -207,7 +207,7 @@ describe('startActorWebNode', () => {
   });
 
   it('exposes runtime status for supplied browser-safe transports', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         serviceWorker: node('service-worker-node'),
@@ -222,7 +222,7 @@ describe('startActorWebNode', () => {
     });
     const transport = new TestMessageTransport();
     transport.connected.add('server-node');
-    const serviceWorkerNode = await startActorWebNode(topology, {
+    const serviceWorkerNode = await startNode(topology, {
       node: 'serviceWorker',
       transport,
     });
@@ -244,7 +244,7 @@ describe('startActorWebNode', () => {
   });
 
   it('forwards browser transport idempotency options into runtime status', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         worker: node('worker-node'),
       },
@@ -257,7 +257,7 @@ describe('startActorWebNode', () => {
       },
     });
     const idempotencyProvider = createInMemoryRuntimeTransportIdempotencyProvider();
-    const workerNode = await startActorWebNode(topology, {
+    const workerNode = await startNode(topology, {
       node: 'worker',
       transport: {
         heartbeatIntervalMs: 0,
@@ -282,7 +282,7 @@ describe('startActorWebNode', () => {
   });
 
   it('rejects owned actors when required tools are not registered', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         worker: node('worker-node'),
       },
@@ -296,13 +296,13 @@ describe('startActorWebNode', () => {
       },
     });
 
-    await expect(startActorWebNode(topology, { node: 'worker' })).rejects.toThrow(
+    await expect(startNode(topology, { node: 'worker' })).rejects.toThrow(
       'requires unregistered tool'
     );
   });
 
   it('rolls back browser-safe startup failures and unsubscribes discovery state', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         worker: node('worker-node'),
@@ -325,7 +325,7 @@ describe('startActorWebNode', () => {
     });
 
     await expect(
-      startActorWebNode(topology, {
+      startNode(topology, {
         node: 'worker',
         connect: ['server'],
         transport,
@@ -342,7 +342,7 @@ describe('startActorWebNode', () => {
   });
 
   it('rejects unknown topology peer keys', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         worker: node('worker-node'),
       },
@@ -350,7 +350,7 @@ describe('startActorWebNode', () => {
     });
 
     await expect(
-      startActorWebNode(topology, {
+      startNode(topology, {
         node: 'worker',
         peers: {
           missing: 'ws://127.0.0.1:1',
@@ -360,7 +360,7 @@ describe('startActorWebNode', () => {
   });
 
   it('creates parameterized actor instances from browser-safe topology nodes', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         worker: node('worker-node'),
       },
@@ -373,7 +373,7 @@ describe('startActorWebNode', () => {
       },
     });
     const transport = new TestMessageTransport();
-    const workerNode = await startActorWebNode(topology, {
+    const workerNode = await startNode(topology, {
       node: 'worker',
       transport,
     });
@@ -392,7 +392,7 @@ describe('startActorWebNode', () => {
   });
 
   it('connects and disconnects peers from a runtime discovery provider', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         worker: node('worker-node'),
@@ -412,7 +412,7 @@ describe('startActorWebNode', () => {
       },
     ]);
     const transport = new TestMessageTransport();
-    const workerNode = await startActorWebNode(topology, {
+    const workerNode = await startNode(topology, {
       node: 'worker',
       transport,
       discovery,
@@ -438,7 +438,7 @@ describe('startActorWebNode', () => {
   });
 
   it('clears actor caches only after browser-safe system and transport shutdown complete', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         worker: node('worker-node'),
       },
@@ -451,7 +451,7 @@ describe('startActorWebNode', () => {
       },
     });
     const transport = new TestMessageTransport();
-    const workerNode = await startActorWebNode(topology, {
+    const workerNode = await startNode(topology, {
       node: 'worker',
       transport,
     });
@@ -490,9 +490,9 @@ function createReceiverBehavior() {
     .build();
 }
 
-describe('startActorWebNode topology subscriptions', () => {
+describe('startNode topology subscriptions', () => {
   it('wires same-node topology subscriptions and delivers emitted events', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         worker: node('worker-node'),
       },
@@ -511,7 +511,7 @@ describe('startActorWebNode topology subscriptions', () => {
       subscriptions: [{ from: 'publisher', to: ['receiver'], events: ['COUNT_CHANGED'] }],
     });
 
-    const workerNode = await startActorWebNode(topology, {
+    const workerNode = await startNode(topology, {
       node: 'worker',
       transport: new TestMessageTransport(),
     });
@@ -528,7 +528,7 @@ describe('startActorWebNode topology subscriptions', () => {
   });
 
   it('re-establishes topology subscriptions when the node restarts', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         worker: node('worker-node'),
       },
@@ -547,7 +547,7 @@ describe('startActorWebNode topology subscriptions', () => {
       subscriptions: [{ from: 'publisher', to: ['receiver'] }],
     });
 
-    const workerNode = await startActorWebNode(topology, {
+    const workerNode = await startNode(topology, {
       node: 'worker',
       transport: new TestMessageTransport(),
     });
@@ -567,7 +567,7 @@ describe('startActorWebNode topology subscriptions', () => {
   });
 
   it('skips subscriptions owned entirely by other nodes', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         worker: node('worker-node'),
@@ -592,7 +592,7 @@ describe('startActorWebNode topology subscriptions', () => {
       subscriptions: [{ from: 'serverPublisher', to: ['serverReceiver'] }],
     });
 
-    const workerNode = await startActorWebNode(topology, {
+    const workerNode = await startNode(topology, {
       node: 'worker',
       transport: new TestMessageTransport(),
     });
@@ -606,7 +606,7 @@ describe('startActorWebNode topology subscriptions', () => {
   });
 
   it('wires a cross-node subscription when a transport is configured', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('server-node'),
         worker: node('worker-node'),
@@ -629,7 +629,7 @@ describe('startActorWebNode topology subscriptions', () => {
     // With a transport configured, a cross-node subscription wires instead of
     // failing loudly. The worker node owns the publisher, so it is a no-op for
     // the edge (the subscriber node initiates) and starts cleanly.
-    const workerNode = await startActorWebNode(topology, {
+    const workerNode = await startNode(topology, {
       node: 'worker',
       transport: new TestMessageTransport(),
     });

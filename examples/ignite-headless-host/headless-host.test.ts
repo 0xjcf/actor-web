@@ -1,8 +1,8 @@
 import {
-  type ClosableActorWebSource,
-  createActorWebClient,
-  type StartedActorWebNode,
-  startActorWebNode,
+  type ClosableSource,
+  createClient,
+  type StartedNode,
+  startNode,
 } from '@actor-web/runtime/browser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
@@ -31,12 +31,8 @@ import {
   type LogisticsRuntimeGatewayServer,
 } from './server-runtime-gateway';
 
-type ShipmentSource = ClosableActorWebSource<ShipmentContext, ShipmentCommand, ShipmentEvent>;
-type ProviderHqSource = ClosableActorWebSource<
-  ProviderHqContext,
-  ProviderHqCommand,
-  ProviderHqEvent
->;
+type ShipmentSource = ClosableSource<ShipmentContext, ShipmentCommand, ShipmentEvent>;
+type ProviderHqSource = ClosableSource<ProviderHqContext, ProviderHqCommand, ProviderHqEvent>;
 
 interface RuntimeStatusTestShape {
   readonly transport: {
@@ -52,8 +48,8 @@ interface RuntimeStatusTestShape {
 
 describe('ignite-headless-host logistics example', () => {
   let gatewayServer: LogisticsRuntimeGatewayServer | undefined;
-  let workerNode: StartedActorWebNode<typeof logistics> | undefined;
-  let providerNode: StartedActorWebNode<typeof logistics> | undefined;
+  let workerNode: StartedNode<typeof logistics> | undefined;
+  let providerNode: StartedNode<typeof logistics> | undefined;
   let closeClient: (() => void) | undefined;
 
   afterEach(async () => {
@@ -951,7 +947,7 @@ describe('ignite-headless-host logistics example', () => {
   });
 
   function createTestClient(gatewayUrl: string) {
-    const client = createActorWebClient(logistics, {
+    const client = createClient(logistics, {
       gateway: { url: gatewayUrl },
       createSocket: (url) => new WebSocket(url) as never,
       clientVersion: 'ignite-headless-host-test',
@@ -1299,7 +1295,7 @@ describe('service worker transport lifecycle', () => {
       return {
         ...actual,
         createMessagePortTransport: createMessagePortTransportMock,
-        startActorWebNode: startActorWebNodeMock,
+        startNode: startActorWebNodeMock,
       };
     });
     vi.stubGlobal('self', serviceWorkerGlobal);
@@ -1378,7 +1374,7 @@ describe('service worker transport lifecycle', () => {
       return {
         ...actual,
         createMessagePortTransport: createMessagePortTransportMock,
-        startActorWebNode: startActorWebNodeMock,
+        startNode: startActorWebNodeMock,
       };
     });
     vi.stubGlobal('self', serviceWorkerGlobal);
@@ -1452,8 +1448,8 @@ describe('service worker transport lifecycle', () => {
 async function startTestWorkerNode(
   transportUrl: string,
   options: { readonly authToken?: string } = {}
-): Promise<StartedActorWebNode<typeof logistics>> {
-  return startActorWebNode(logistics, {
+): Promise<StartedNode<typeof logistics>> {
+  return startNode(logistics, {
     node: 'worker',
     peers: {
       server: transportUrl,
@@ -1470,8 +1466,8 @@ async function startTestWorkerNode(
 async function startTestProviderNode(
   transportUrl: string,
   options: { readonly authToken?: string } = {}
-): Promise<StartedActorWebNode<typeof logistics>> {
-  return startActorWebNode(logistics, {
+): Promise<StartedNode<typeof logistics>> {
+  return startNode(logistics, {
     node: 'provider',
     peers: {
       server: transportUrl,

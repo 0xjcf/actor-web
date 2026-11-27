@@ -398,7 +398,7 @@ Later slice:
 
 Status: complete for the provider interface and runner integration.
 `serveNode(...)` can register a listening transport URL, and both
-`serveNode(...)` and `startActorWebNode(...)` can seed and subscribe to
+`serveNode(...)` and `startNode(...)` can seed and subscribe to
 discovered peer records. Remaining work is production adapters backed by real
 deployment infrastructure and durable membership state.
 

@@ -23,17 +23,11 @@ import type {
 } from './runtime-gateway-shared.js';
 import { createRuntimeGatewaySourceHandle } from './runtime-gateway-shared.js';
 import type { ActorEventProjection, ActorSnapshotProjection } from './runtime-projection.js';
-import type {
-  ActorWebActorAddress,
-  ActorWebActorContext,
-  ActorWebActorDescriptor,
-  ActorWebActorEvent,
-  ActorWebActorMessage,
-} from './topology.js';
+import type { ActorContextOf, ActorDescriptor, ActorEventOf, ActorMessageOf } from './topology.js';
 import type { ActorSnapshot, JsonValue, Message } from './types.js';
 import { Address, parse } from './utils/factories.js';
 
-export interface ActorWebGatewaySocket {
+export interface GatewaySocket {
   readonly readyState: number;
   send(data: string): void;
   close(): void;
@@ -43,25 +37,25 @@ export interface ActorWebGatewaySocket {
   addEventListener(type: 'message', listener: (event: MessageEvent<string>) => void): void;
 }
 
-export type ActorWebSourceGatewayScopeOptions = Omit<RuntimeGatewayScopeDescriptor, 'kind'> & {
+export type SourceGatewayScopeOptions = Omit<RuntimeGatewayScopeDescriptor, 'kind'> & {
   readonly kind?: string;
 };
 
-export interface ActorWebSourceGatewayOptions {
+export interface SourceGatewayOptions {
   readonly url: string;
-  readonly scope?: ActorWebSourceGatewayScopeOptions;
+  readonly scope?: SourceGatewayScopeOptions;
   readonly auth?: RuntimeGatewayAuthProvider;
 }
 
-export interface ActorWebSourceOptions {
-  readonly gateway: ActorWebSourceGatewayOptions;
+export interface GatewaySourceOptions {
+  readonly gateway: SourceGatewayOptions;
   readonly streamId?: string;
-  readonly createSocket?: (url: string) => ActorWebGatewaySocket;
+  readonly createSocket?: (url: string) => GatewaySocket;
   readonly clientVersion?: string;
   readonly reconnectDelayMs?: number;
 }
 
-export interface ActorWebSourceFactoryContext {
+export interface SourceFactoryContext {
   readonly host?: EventTarget;
   readonly signal?: AbortSignal;
 }
@@ -74,25 +68,25 @@ interface GatewaySourceBehaviorOptions {
 interface ResolvedGatewayBackedSourceInput {
   readonly address: ActorAddress;
   readonly scope: RuntimeGatewayScopeDescriptor;
-  readonly options: ActorWebSourceOptions;
+  readonly options: GatewaySourceOptions;
 }
 
-export interface ActorWebAddressSourceInput {
-  readonly address: string | ActorWebActorAddress | ActorAddress;
+export interface AddressSourceInput {
+  readonly address: string | ActorAddress;
   readonly contractVersion?: string;
-  readonly gateway: ActorWebSourceGatewayOptions;
-  readonly scope?: ActorWebSourceGatewayScopeOptions;
+  readonly gateway: SourceGatewayOptions;
+  readonly scope?: SourceGatewayScopeOptions;
 }
 
-export interface ActorWebActorSourceInput<TActor extends ActorWebActorDescriptor> {
+export interface ActorSourceInput<TActor extends ActorDescriptor> {
   readonly actor: TActor;
-  readonly gateway: ActorWebSourceGatewayOptions;
+  readonly gateway: SourceGatewayOptions;
   readonly streamId?: string;
-  readonly createSocket?: (url: string) => ActorWebGatewaySocket;
+  readonly createSocket?: (url: string) => GatewaySocket;
   readonly clientVersion?: string;
 }
 
-export interface ClosableActorWebReadModelSource<
+export interface ClosableReadModelSource<
   TContext = unknown,
   TEvent extends ActorMessage = ActorMessage,
 > extends ActorReadModelSource<TContext, TEvent> {
@@ -105,63 +99,63 @@ export interface ClosableActorWebReadModelSource<
 
 /**
  * Command-capable source for hosts that intentionally own command/control.
- * Prefer ClosableActorWebReadModelSource for projection-only components
+ * Prefer ClosableReadModelSource for projection-only components
  * and pair it with this surface only when send/ask is part of the component API.
  */
-export interface ClosableActorWebCommandSource<
+export interface ClosableCommandSource<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
-> extends ClosableActorWebReadModelSource<TContext, TEvent>,
+> extends ClosableReadModelSource<TContext, TEvent>,
     ActorCommandSource<TContext, TMessage, TEvent> {
   send(message: TMessage, metadata?: AgentExecutionCommandMetadata): Promise<void>;
   ask<TResponse = JsonValue>(
     message: TMessage,
-    timeout?: number | ActorWebAskOptions
+    timeout?: number | GatewayAskOptions
   ): Promise<TResponse>;
 }
 
-export interface ActorWebAskOptions {
+export interface GatewayAskOptions {
   readonly timeout?: number;
   readonly metadata?: AgentExecutionCommandMetadata;
 }
 
-export type ClosableActorWebSource<
+export type ClosableSource<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
-> = ClosableActorWebCommandSource<TContext, TMessage, TEvent>;
+> = ClosableCommandSource<TContext, TMessage, TEvent>;
 
-export interface ClosableActorWebTraceSource
-  extends Pick<ClosableActorWebReadModelSource<unknown, ActorMessage>, 'address' | 'close'> {
+export interface ClosableTraceSource
+  extends Pick<ClosableReadModelSource<unknown, ActorMessage>, 'address' | 'close'> {
   latestTrace(): RuntimeGatewayTraceProjection | null;
   subscribeTrace(listener: (projection: RuntimeGatewayTraceProjection) => void): () => void;
   transportStatus(): ProjectionTransportStatus;
   subscribeTransportStatus(listener: (status: ProjectionTransportStatus) => void): () => void;
 }
 
-export type ClosableActorWebSourceHandle<
+export type ClosableSourceHandle<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
 > = RuntimeGatewaySourceHandle<
-  ClosableActorWebReadModelSource<TContext, TEvent>,
-  ClosableActorWebSource<TContext, TMessage, TEvent>
+  ClosableReadModelSource<TContext, TEvent>,
+  ClosableSource<TContext, TMessage, TEvent>
 >;
 
-export function hasActorWebSourceGatewayOptions(value: unknown): value is ActorWebSourceOptions {
+export function hasActorWebSourceGatewayOptions(value: unknown): value is GatewaySourceOptions {
   return typeof value === 'object' && value !== null && 'gateway' in value;
 }
 
-export function createActorWebSourceHandle<
+export function createSourceHandle<
   TContext = unknown,
   TMessage extends ActorMessage = ActorMessage,
   TEvent extends ActorMessage = ActorMessage,
 >(
-  readModel: ClosableActorWebReadModelSource<TContext, TEvent>,
-  commandSource: Pick<ClosableActorWebSource<TContext, TMessage, TEvent>, 'ask' | 'close' | 'send'>
-): ClosableActorWebSourceHandle<TContext, TMessage, TEvent> {
-  const commandFacade: ClosableActorWebSource<TContext, TMessage, TEvent> = {
+  readModel: ClosableReadModelSource<TContext, TEvent>,
+  commandSource: Pick<ClosableSource<TContext, TMessage, TEvent>, 'ask' | 'close' | 'send'>
+): ClosableSourceHandle<TContext, TMessage, TEvent> {
+  const commandFacade: ClosableSource<TContext, TMessage, TEvent> = {
     address: readModel.address,
     snapshot: () => readModel.snapshot(),
     subscribe: (listener) => readModel.subscribe(listener),
@@ -187,7 +181,7 @@ type PendingSend = {
   reject(error: Error): void;
 };
 
-function normalizeAddress(address: string | ActorWebActorAddress | ActorAddress): ActorAddress {
+function normalizeAddress(address: string | ActorAddress): ActorAddress {
   // Address.from handles both a raw wire path and an already-branded address.
   return Address.from(address);
 }
@@ -212,7 +206,7 @@ function placeholderSnapshot<TContext>(address: ActorAddress): ActorSourceSnapsh
 
 function mergeScope(
   scope: RuntimeGatewayScopeDescriptor,
-  override: ActorWebSourceGatewayScopeOptions | undefined
+  override: SourceGatewayScopeOptions | undefined
 ): RuntimeGatewayScopeDescriptor {
   if (!override) {
     return scope;
@@ -270,10 +264,10 @@ function eventProjectionToSourceEvent<TEvent extends ActorMessage>(
   };
 }
 
-function defaultSocket(url: string): ActorWebGatewaySocket {
+function defaultSocket(url: string): GatewaySocket {
   if (typeof WebSocket === 'undefined') {
     throw new Error(
-      'createActorWebSource requires WebSocket. Pass createSocket when running outside a browser.'
+      'createGatewaySource requires WebSocket. Pass createSocket when running outside a browser.'
     );
   }
 
@@ -293,15 +287,12 @@ function createGatewayFrameParseError(): Error {
 }
 
 function resolveGatewayBackedSourceInput(
-  input:
-    | ActorWebActorDescriptor
-    | ActorWebActorSourceInput<ActorWebActorDescriptor>
-    | ActorWebAddressSourceInput,
-  options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
+  input: ActorDescriptor | ActorSourceInput<ActorDescriptor> | AddressSourceInput,
+  options?: GatewaySourceOptions | Omit<GatewaySourceOptions, 'gateway'>
 ): ResolvedGatewayBackedSourceInput {
   const isObjectActorInput = 'gateway' in input && 'actor' in input;
   const isAddressInput = 'gateway' in input && 'address' in input && !('nodeAddress' in input);
-  const actorDescriptor: ActorWebActorDescriptor | undefined = isObjectActorInput
+  const actorDescriptor: ActorDescriptor | undefined = isObjectActorInput
     ? input.actor
     : isAddressInput
       ? undefined
@@ -312,7 +303,7 @@ function resolveGatewayBackedSourceInput(
   } else if (actorDescriptor) {
     address = normalizeAddress(actorDescriptor.address);
   } else {
-    throw new Error('createActorWebSource requires an actor descriptor or actor address.');
+    throw new Error('createGatewaySource requires an actor descriptor or actor address.');
   }
 
   const resolvedOptions = {
@@ -320,8 +311,8 @@ function resolveGatewayBackedSourceInput(
     gateway:
       isAddressInput || isObjectActorInput
         ? input.gateway
-        : (options as ActorWebSourceOptions).gateway,
-  } as ActorWebSourceOptions;
+        : (options as GatewaySourceOptions).gateway,
+  } as GatewaySourceOptions;
   const descriptorScope = actorDescriptor?.gateway?.scope;
   const legacyInputScope = isAddressInput ? input.scope : undefined;
   const inferredScope = {
@@ -345,9 +336,9 @@ function createGatewayBackedSource<
 >(
   address: ActorAddress,
   scope: RuntimeGatewayScopeDescriptor,
-  options: ActorWebSourceOptions,
+  options: GatewaySourceOptions,
   behavior: GatewaySourceBehaviorOptions = {}
-): ClosableActorWebSource<TContext, TMessage, TEvent> {
+): ClosableSource<TContext, TMessage, TEvent> {
   const streamId = options.streamId ?? `actor-web-${parse(address).id}`;
   const socket = (options.createSocket ?? defaultSocket)(options.gateway.url);
   const subscribeMode = behavior.subscribeMode ?? 'full';
@@ -681,7 +672,7 @@ function createGatewayBackedSource<
     },
     async ask<TResponse = JsonValue>(
       message: TMessage,
-      timeout?: number | ActorWebAskOptions
+      timeout?: number | GatewayAskOptions
     ): Promise<TResponse> {
       await ready;
       requestSequence += 1;
@@ -723,13 +714,13 @@ function createGatewayBackedSource<
 function createGatewayBackedTraceSource(
   address: ActorAddress,
   scope: RuntimeGatewayScopeDescriptor,
-  options: ActorWebSourceOptions
-): ClosableActorWebTraceSource {
+  options: GatewaySourceOptions
+): ClosableTraceSource {
   const streamId = options.streamId ?? `actor-web-${parse(address).id}`;
   const createSocket = options.createSocket ?? defaultSocket;
   const statusListeners = new Set<(status: ProjectionTransportStatus) => void>();
   const traceListeners = new Set<(projection: RuntimeGatewayTraceProjection) => void>();
-  let socket!: ActorWebGatewaySocket;
+  let socket!: GatewaySocket;
   let currentStatus = createProjectionTransportStatus('replaying', {
     reason: 'Connecting to Actor-Web gateway',
   });
@@ -968,24 +959,21 @@ function createGatewayBackedTraceSource(
   };
 }
 
-export function createActorWebReadModelSource<TActor extends ActorWebActorDescriptor>(
-  input: ActorWebActorSourceInput<TActor>
-): ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>;
-export function createActorWebReadModelSource<TActor extends ActorWebActorDescriptor>(
+export function createGatewayReadModelSource<TActor extends ActorDescriptor>(
+  input: ActorSourceInput<TActor>
+): ClosableReadModelSource<ActorContextOf<TActor>, ActorEventOf<TActor>>;
+export function createGatewayReadModelSource<TActor extends ActorDescriptor>(
   actorDescriptor: TActor,
-  options: ActorWebSourceOptions
-): ClosableActorWebReadModelSource<ActorWebActorContext<TActor>, ActorWebActorEvent<TActor>>;
-export function createActorWebReadModelSource(
-  input: ActorWebAddressSourceInput,
-  options?: Omit<ActorWebSourceOptions, 'gateway'>
-): ClosableActorWebReadModelSource<unknown, ActorMessage>;
-export function createActorWebReadModelSource(
-  input:
-    | ActorWebActorDescriptor
-    | ActorWebActorSourceInput<ActorWebActorDescriptor>
-    | ActorWebAddressSourceInput,
-  options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
-): ClosableActorWebReadModelSource<unknown, ActorMessage> {
+  options: GatewaySourceOptions
+): ClosableReadModelSource<ActorContextOf<TActor>, ActorEventOf<TActor>>;
+export function createGatewayReadModelSource(
+  input: AddressSourceInput,
+  options?: Omit<GatewaySourceOptions, 'gateway'>
+): ClosableReadModelSource<unknown, ActorMessage>;
+export function createGatewayReadModelSource(
+  input: ActorDescriptor | ActorSourceInput<ActorDescriptor> | AddressSourceInput,
+  options?: GatewaySourceOptions | Omit<GatewaySourceOptions, 'gateway'>
+): ClosableReadModelSource<unknown, ActorMessage> {
   const resolved = resolveGatewayBackedSourceInput(input, options);
   const source = createGatewayBackedSource(resolved.address, resolved.scope, resolved.options);
 
@@ -1000,32 +988,21 @@ export function createActorWebReadModelSource(
   };
 }
 
-export function createActorWebCommandSource<TActor extends ActorWebActorDescriptor>(
-  input: ActorWebActorSourceInput<TActor>
-): ClosableActorWebSource<
-  ActorWebActorContext<TActor>,
-  ActorWebActorMessage<TActor>,
-  ActorWebActorEvent<TActor>
->;
-export function createActorWebCommandSource<TActor extends ActorWebActorDescriptor>(
+export function createGatewayCommandSource<TActor extends ActorDescriptor>(
+  input: ActorSourceInput<TActor>
+): ClosableSource<ActorContextOf<TActor>, ActorMessageOf<TActor>, ActorEventOf<TActor>>;
+export function createGatewayCommandSource<TActor extends ActorDescriptor>(
   actorDescriptor: TActor,
-  options: ActorWebSourceOptions
-): ClosableActorWebSource<
-  ActorWebActorContext<TActor>,
-  ActorWebActorMessage<TActor>,
-  ActorWebActorEvent<TActor>
->;
-export function createActorWebCommandSource(
-  input: ActorWebAddressSourceInput,
-  options?: Omit<ActorWebSourceOptions, 'gateway'>
-): ClosableActorWebSource<unknown, ActorMessage, ActorMessage>;
-export function createActorWebCommandSource(
-  input:
-    | ActorWebActorDescriptor
-    | ActorWebActorSourceInput<ActorWebActorDescriptor>
-    | ActorWebAddressSourceInput,
-  options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
-): ClosableActorWebSource<unknown, ActorMessage, ActorMessage> {
+  options: GatewaySourceOptions
+): ClosableSource<ActorContextOf<TActor>, ActorMessageOf<TActor>, ActorEventOf<TActor>>;
+export function createGatewayCommandSource(
+  input: AddressSourceInput,
+  options?: Omit<GatewaySourceOptions, 'gateway'>
+): ClosableSource<unknown, ActorMessage, ActorMessage>;
+export function createGatewayCommandSource(
+  input: ActorDescriptor | ActorSourceInput<ActorDescriptor> | AddressSourceInput,
+  options?: GatewaySourceOptions | Omit<GatewaySourceOptions, 'gateway'>
+): ClosableSource<unknown, ActorMessage, ActorMessage> {
   const resolved = resolveGatewayBackedSourceInput(input, options);
 
   return createGatewayBackedSource(resolved.address, resolved.scope, resolved.options, {
@@ -1034,44 +1011,63 @@ export function createActorWebCommandSource(
   });
 }
 
-export function createActorWebSource<TActor extends ActorWebActorDescriptor>(
-  input: ActorWebActorSourceInput<TActor>
-): ClosableActorWebSource<
-  ActorWebActorContext<TActor>,
-  ActorWebActorMessage<TActor>,
-  ActorWebActorEvent<TActor>
->;
-export function createActorWebSource<TActor extends ActorWebActorDescriptor>(
+export function createGatewaySource<TActor extends ActorDescriptor>(
+  input: ActorSourceInput<TActor>
+): ClosableSource<ActorContextOf<TActor>, ActorMessageOf<TActor>, ActorEventOf<TActor>>;
+export function createGatewaySource<TActor extends ActorDescriptor>(
   actorDescriptor: TActor,
-  options: ActorWebSourceOptions
-): ClosableActorWebSource<
-  ActorWebActorContext<TActor>,
-  ActorWebActorMessage<TActor>,
-  ActorWebActorEvent<TActor>
->;
-export function createActorWebSource(
-  input: ActorWebAddressSourceInput,
-  options?: Omit<ActorWebSourceOptions, 'gateway'>
-): ClosableActorWebSource<unknown, ActorMessage, ActorMessage>;
-export function createActorWebSource(
-  input:
-    | ActorWebActorDescriptor
-    | ActorWebActorSourceInput<ActorWebActorDescriptor>
-    | ActorWebAddressSourceInput,
-  options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
-): ClosableActorWebSource<unknown, ActorMessage, ActorMessage> {
+  options: GatewaySourceOptions
+): ClosableSource<ActorContextOf<TActor>, ActorMessageOf<TActor>, ActorEventOf<TActor>>;
+export function createGatewaySource(
+  input: AddressSourceInput,
+  options?: Omit<GatewaySourceOptions, 'gateway'>
+): ClosableSource<unknown, ActorMessage, ActorMessage>;
+export function createGatewaySource(
+  input: ActorDescriptor | ActorSourceInput<ActorDescriptor> | AddressSourceInput,
+  options?: GatewaySourceOptions | Omit<GatewaySourceOptions, 'gateway'>
+): ClosableSource<unknown, ActorMessage, ActorMessage> {
   const resolved = resolveGatewayBackedSourceInput(input, options);
 
   return createGatewayBackedSource(resolved.address, resolved.scope, resolved.options);
 }
 
-export function createActorWebTraceSource(
-  input:
-    | ActorWebActorDescriptor
-    | ActorWebActorSourceInput<ActorWebActorDescriptor>
-    | ActorWebAddressSourceInput,
-  options?: ActorWebSourceOptions | Omit<ActorWebSourceOptions, 'gateway'>
-): ClosableActorWebTraceSource {
+export function createGatewayTraceSource(
+  input: ActorDescriptor | ActorSourceInput<ActorDescriptor> | AddressSourceInput,
+  options?: GatewaySourceOptions | Omit<GatewaySourceOptions, 'gateway'>
+): ClosableTraceSource {
   const resolved = resolveGatewayBackedSourceInput(input, options);
   return createGatewayBackedTraceSource(resolved.address, resolved.scope, resolved.options);
 }
+
+export type {
+  /** @deprecated Use AddressSourceInput instead. */
+  AddressSourceInput as ActorWebAddressSourceInput,
+  /** @deprecated Use GatewaySocket instead. */
+  GatewaySocket as ActorWebGatewaySocket,
+  /** @deprecated Use SourceGatewayOptions instead. */
+  SourceGatewayOptions as ActorWebSourceGatewayOptions,
+  /** @deprecated Use GatewaySourceOptions instead. */
+  GatewaySourceOptions as ActorWebSourceOptions,
+  /** @deprecated Use ClosableCommandSource instead. */
+  ClosableCommandSource as ClosableActorWebCommandSource,
+  /** @deprecated Use ClosableReadModelSource instead. */
+  ClosableReadModelSource as ClosableActorWebReadModelSource,
+  /** @deprecated Use ClosableSource instead. */
+  ClosableSource as ClosableActorWebSource,
+  /** @deprecated Use ClosableSourceHandle instead. */
+  ClosableSourceHandle as ClosableActorWebSourceHandle,
+  /** @deprecated Use ClosableTraceSource instead. */
+  ClosableTraceSource as ClosableActorWebTraceSource,
+};
+export {
+  /** @deprecated Use createGatewayCommandSource instead. */
+  createGatewayCommandSource as createActorWebCommandSource,
+  /** @deprecated Use createGatewayReadModelSource instead. */
+  createGatewayReadModelSource as createActorWebReadModelSource,
+  /** @deprecated Use createGatewaySource instead. */
+  createGatewaySource as createActorWebSource,
+  /** @deprecated Use createSourceHandle instead. */
+  createSourceHandle as createActorWebSourceHandle,
+  /** @deprecated Use createGatewayTraceSource instead. */
+  createGatewayTraceSource as createActorWebTraceSource,
+};

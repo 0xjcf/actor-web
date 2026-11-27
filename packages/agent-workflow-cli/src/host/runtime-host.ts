@@ -18,35 +18,35 @@ import type {
   ActorMessage,
   ActorRef,
   ActorToolRegistry,
-  ActorWebTopology,
-  ActorWebTopologyInput,
   AgentExecutionAdmissionDecision,
   AgentExecutionAdmissionPolicy,
   AgentExecutionCommandMetadata,
   AgentExecutionCommandPrincipal,
   AgentExecutionIdempotencyClaimPort,
   AgentSessionCheckpointStore,
-  ClosableActorWebSource,
-  ClosableActorWebTraceSource,
+  ClosableSource,
+  ClosableTraceSource,
   ClusterState,
   Message,
   ProjectionTransportStatus,
   RuntimeGatewayAuthProvider,
   RuntimeTransportStatus,
+  Topology,
+  TopologyInput,
 } from '@actor-web/runtime';
 import {
   admitAgentExecutionCommand,
-  createActorWebSource,
-  createActorWebTraceSource,
+  createGatewaySource,
+  createGatewayTraceSource,
   Logger,
   parse,
   startRuntime,
 } from '@actor-web/runtime';
 import type {
-  ActorWebNodeGatewayOptions,
-  ActorWebNodeTransportOptions,
-  ServeActorWebNodeOptions,
-  ServedActorWebNode,
+  NodeGatewayOptions,
+  NodeTransportOptions,
+  ServedNode,
+  ServeNodeOptions,
 } from '@actor-web/runtime/node';
 import { serveNode } from '@actor-web/runtime/node';
 import { loadModuleExport } from './load-module.js';
@@ -125,13 +125,13 @@ export interface RuntimeHostDistributedOptions {
   readonly gateway?:
     | boolean
     | Pick<
-        ActorWebNodeGatewayOptions<string>,
+        NodeGatewayOptions<string>,
         'host' | 'port' | 'expose' | 'inboundQueueLimit' | 'auth' | 'commandAdmission'
       >;
   readonly transport?:
     | boolean
     | Pick<
-        ActorWebNodeTransportOptions,
+        NodeTransportOptions,
         | 'listen'
         | 'connectTimeoutMs'
         | 'heartbeatIntervalMs'
@@ -191,10 +191,8 @@ interface RegisteredActor {
   readonly origin: 'topology' | 'spawned';
 }
 
-type AnyTopology = ActorWebTopology<ActorWebTopologyInput>;
-type RuntimeGatewayTraceProjection = NonNullable<
-  ReturnType<ClosableActorWebTraceSource['latestTrace']>
->;
+type AnyTopology = Topology<TopologyInput>;
+type RuntimeGatewayTraceProjection = NonNullable<ReturnType<ClosableTraceSource['latestTrace']>>;
 
 function isTopologyValue(value: unknown): value is AnyTopology {
   return (
@@ -301,7 +299,7 @@ function validateDistributedExposure(
 
 function requiresNonLocalhostGatewayHardening(
   options: RuntimeHostOptions
-): Pick<ActorWebNodeGatewayOptions<string>, 'auth' | 'commandAdmission'> | null {
+): Pick<NodeGatewayOptions<string>, 'auth' | 'commandAdmission'> | null {
   if (!options.distributed?.allowUnsafeExposure || !options.distributed.gateway) {
     return null;
   }
@@ -317,7 +315,7 @@ function requiresNonLocalhostGatewayHardening(
 
 function requiresNonLocalhostTransportHardening(
   options: RuntimeHostOptions
-): Pick<ActorWebNodeTransportOptions, 'auth'> | null {
+): Pick<NodeTransportOptions, 'auth'> | null {
   if (!options.distributed?.allowUnsafeExposure || !options.distributed.transport) {
     return null;
   }
@@ -576,12 +574,9 @@ export async function createRuntimeHost(
 
   const tools = resolveRuntimeHostTools(options);
   let runtime: Awaited<ReturnType<typeof startRuntime>> | null = null;
-  let servedNode: ServedActorWebNode<AnyTopology> | null = null;
-  const remoteSourceCache = new Map<
-    string,
-    ClosableActorWebSource<unknown, ActorMessage, ActorMessage>
-  >();
-  const remoteTraceSourceCache = new Map<string, ClosableActorWebTraceSource>();
+  let servedNode: ServedNode<AnyTopology> | null = null;
+  const remoteSourceCache = new Map<string, ClosableSource<unknown, ActorMessage, ActorMessage>>();
+  const remoteTraceSourceCache = new Map<string, ClosableTraceSource>();
   const remoteTransportStatuses = new Map<string, ProjectionTransportStatus>();
 
   const toRemoteReadiness = (): RuntimeHostReadinessStatus => ({
@@ -613,7 +608,7 @@ export async function createRuntimeHost(
     if (options.remote) {
       // Remote mode is gateway-backed; actor sources are opened lazily.
     } else if (options.distributed) {
-      const serveOptions: ServeActorWebNodeOptions<AnyTopology> = {
+      const serveOptions: ServeNodeOptions<AnyTopology> = {
         node: spawnNodeKey,
         ...(options.distributed.host ? { host: options.distributed.host } : {}),
         ...(options.distributed.gateway ? { gateway: options.distributed.gateway } : {}),
@@ -703,7 +698,7 @@ export async function createRuntimeHost(
 
   const getRemoteSource = (
     target: string
-  ): ClosableActorWebSource<unknown, ActorMessage, ActorMessage> | undefined => {
+  ): ClosableSource<unknown, ActorMessage, ActorMessage> | undefined => {
     if (!options.remote) {
       return undefined;
     }
@@ -719,7 +714,7 @@ export async function createRuntimeHost(
     if (cached) {
       return cached;
     }
-    const source = createActorWebSource({
+    const source = createGatewaySource({
       actor: actorDescriptor,
       gateway: options.remote.gateway,
       streamId: `actor-web-cli-remote-${actorKey}`,
@@ -731,7 +726,7 @@ export async function createRuntimeHost(
     return source;
   };
 
-  const getRemoteTraceSource = (target: string): ClosableActorWebTraceSource | undefined => {
+  const getRemoteTraceSource = (target: string): ClosableTraceSource | undefined => {
     if (!options.remote) {
       return undefined;
     }
@@ -747,7 +742,7 @@ export async function createRuntimeHost(
     if (cached) {
       return cached;
     }
-    const source = createActorWebTraceSource({
+    const source = createGatewayTraceSource({
       actor: actorDescriptor,
       gateway: {
         ...options.remote.gateway,
@@ -1136,7 +1131,7 @@ export async function createRuntimeHostFromFile(
   if (!isTopologyValue(loaded.value)) {
     return {
       ok: false,
-      error: `${topologyPath} does not export a topology (expected a defineActorWebTopology(...) value with "actors" and "nodes")`,
+      error: `${topologyPath} does not export a topology (expected a defineTopology(...) value with "actors" and "nodes")`,
     };
   }
   return createRuntimeHost(loaded.value, options);

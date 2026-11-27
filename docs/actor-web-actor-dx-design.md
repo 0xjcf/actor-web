@@ -3,7 +3,7 @@
 ## Summary
 
 Author actors with the **existing** primitives — `defineBehavior`,
-`defineActorWebTopology`, `igniteCore`, `spawn`, `subscribe` — and make their
+`defineTopology`, `igniteCore`, `spawn`, `subscribe` — and make their
 *defaults* match the systems Actor-Web draws from (XState, Erlang/OTP, Elixir,
 Akka). No new sugar functions. The boilerplate in today's consumers (e.g.
 fas-studio: 20 identical transition handlers, 8-line command blocks, a shell
@@ -25,7 +25,7 @@ newcomer who knows XState + OTP already knows the API.
 | Primitive | Lineage | Default that removes boilerplate |
 |---|---|---|
 | `defineBehavior` + machine/FSM | Akka `Behaviors`, Erlang `gen_statem`, XState machine-as-actor | The machine/FSM **is** the behavior. No handler required; `ask` resolves with the snapshot; an event with no override just transitions. |
-| `defineActorWebTopology` | OTP supervision tree, Akka guardian | Static actors + supervisors declared; behaviors are plain values. |
+| `defineTopology` | OTP supervision tree, Akka guardian | Static actors + supervisors declared; behaviors are plain values. |
 | `spawn` | Erlang `spawn_link`, Akka `context.spawn`, XState `spawnChild` | Dynamic / per-entity actors — use it instead of a new "dynamic actor" API. |
 | `subscribe` | Phoenix.PubSub, Akka EventStream, Erlang `monitor` | `emit` → `subscribe` delivers to other actors; declarative topology `subscriptions` is OTP-style wiring over the same primitive. |
 | `igniteCore` | XState `useActor` | Exposes `view`, `send`-based commands, and a headless agent runtime — all from one definition. |

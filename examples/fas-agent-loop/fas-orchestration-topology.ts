@@ -1,4 +1,4 @@
-import { actor, defineActorWebTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node, supervisor, tool } from '@actor-web/runtime/topology';
 import {
   createFasSupervisorBehavior,
   createImplementerAgentBehavior,
@@ -126,4 +126,4 @@ export const fasOrchestrationConfig = {
   },
 } as const;
 
-export const fasOrchestration = defineActorWebTopology(fasOrchestrationConfig);
+export const fasOrchestration = defineTopology(fasOrchestrationConfig);
