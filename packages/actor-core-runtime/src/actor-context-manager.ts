@@ -74,6 +74,7 @@ interface ContextStorage<T> {
 interface FallbackContextFrame<T> {
   id: symbol;
   context: T;
+  childTail?: Promise<void>;
 }
 
 /**
@@ -87,6 +88,7 @@ export class FallbackContextStorage<T> implements ContextStorage<T> {
   private current: T | undefined;
   private readonly frames: FallbackContextFrame<T>[] = [];
   private topLevelAsyncTail: Promise<void> = Promise.resolve();
+  private notifyIdle?: () => void;
   private rootPrevious: T | undefined;
   private callbackDepth = 0;
 
@@ -149,14 +151,30 @@ export class FallbackContextStorage<T> implements ContextStorage<T> {
 
   /**
    * Serialize top-level async work without changing run()'s synchronous contract.
-   * A call made while a frame is already open is nested reentry, so an actor can
-   * ask another actor without waiting for its own turn to finish.
+   * An open frame can belong to an unrelated caller suspended on I/O.
+   * Explicit child deliveries queue on their own live parent instead. Two
+   * siblings must not overlap or wait behind their own parent at the root.
    */
-  runAsync<TResult>(context: T, fn: () => Promise<TResult>): Promise<TResult> {
-    if (this.frames.length > 0) {
-      return this.runReentrant(context, fn);
+  runAsync<TResult>(context: T, fn: () => Promise<TResult>, parent?: T): Promise<TResult> {
+    const owner = parent !== undefined && this.frames.find((frame) => frame.context === parent);
+    if (owner) {
+      const pending = (owner.childTail ?? Promise.resolve()).then(() =>
+        this.getStore() === parent ? this.runReentrant(context, fn) : this.runAsync(context, fn)
+      );
+      owner.childTail = pending.then(
+        () => undefined,
+        () => undefined
+      );
+      return pending;
     }
-    const pending = this.topLevelAsyncTail.then(() => this.run(context, fn));
+    const pending = this.topLevelAsyncTail.then(async () => {
+      // A timed-out caller (or a direct run()) can leave a child still unwinding.
+      if (this.frames.length > 0)
+        await new Promise<void>((resolve) => {
+          this.notifyIdle = resolve;
+        });
+      return this.run(context, fn);
+    });
     this.topLevelAsyncTail = pending.then(
       () => undefined,
       () => undefined
@@ -175,6 +193,8 @@ export class FallbackContextStorage<T> implements ContextStorage<T> {
     if (this.frames.length === 0) {
       this.current = this.rootPrevious;
       this.rootPrevious = undefined;
+      this.notifyIdle?.();
+      this.notifyIdle = undefined;
       return;
     }
 
@@ -505,24 +525,22 @@ export function safeRun<T>(context: ActorContext, fn: () => T, fallbackActorId?:
  * Run one top-level async operation with context isolation.
  *
  * Browser fallbacks serialize concurrent top-level runs because they cannot
- * isolate those contexts. A run started while a frame is already open reenters
- * that frame, so one actor can ask another before its own turn finishes.
+ * isolate those contexts. Only a local delivery bound to the current parent
+ * turn may reenter it.
  * AsyncLocalStorage environments retain their normal concurrent behavior.
  */
 export function safeRunAsync<T>(
   context: ActorContext,
   fn: () => Promise<T>,
   fallbackActorId?: string,
-  options?: { allowFallbackReentry?: boolean }
+  parentTurn?: ActorContext
 ): Promise<T> {
   if (storage instanceof FallbackContextStorage) {
-    if (options?.allowFallbackReentry) {
-      return storage.runReentrant(context, () =>
-        Promise.resolve(safeRun(context, fn, fallbackActorId))
-      );
-    }
-
-    return storage.runAsync(context, () => Promise.resolve(safeRun(context, fn, fallbackActorId)));
+    return storage.runAsync(
+      context,
+      () => Promise.resolve(safeRun(context, fn, fallbackActorId)),
+      parentTurn
+    );
   }
 
   return Promise.resolve(safeRun(context, fn, fallbackActorId));
