@@ -17,7 +17,7 @@ remains under-documented, lost on system restart, and silently non-idempotent.
 
 This design adds:
 
-1. A declarative `subscriptions` block on `defineActorWebTopology`, wired and
+1. A declarative `subscriptions` block on `defineTopology`, wired and
    torn down by the runtime.
 2. A batch `subscribers: ActorRef[]` overload on `system.subscribe` as the
    imperative escape hatch under the same machinery.
@@ -69,8 +69,8 @@ The remaining friction is entirely in *declaring the wiring*.
 | Subscriptions are **lost on system restart** (in-memory registry) | `actor-system-impl.ts:355,380` |
 | `analyzeActorBehavior` is conservative: any `onMessage` actor "might emit"; types not introspected | `auto-publishing.ts:123-147` |
 | `EventBrokerActor` (topics + wildcards + cross-node design) is **never spawned, zero tests** | `event-broker-actor.ts`; `getEventBrokerAddress()` returns `undefined` |
-| Declarative `subscriptions` block **implemented** on `defineActorWebTopology` | `topology.ts:249-264` |
-| Topology subscriptions wired and torn down by the local runtime client **and** both node hosts (`serveNode`, `startActorWebNode`); re-established on every start | `actor-web-client.ts:484-514`; `actor-web-node-runtime.ts` (`wireOwnedActorWebSubscriptions`) |
+| Declarative `subscriptions` block **implemented** on `defineTopology` | `topology.ts:249-264` |
+| Topology subscriptions wired and torn down by the local runtime client **and** both node hosts (`serveNode`, `startNode`); re-established on every start | `actor-web-client.ts:484-514`; `actor-web-node-runtime.ts` (`wireOwnedActorWebSubscriptions`) |
 | Node hosts wire same-node pairs only: pairs owned by other nodes are skipped (wired by the owning node), node-spanning pairs **fail loudly at start** — cross-node delivery is unsupported | `actor-web-node-runtime.ts` (`wireOwnedActorWebSubscriptions`); `unit/serve-actor-web-node.test.ts`, `unit/start-actor-web-node.test.ts` |
 | `emit` reaches inter-actor subscribers **and** UI `subscribeEvent` off the same stream | `integration/ignite-element-bridge.ts:213-226` |
 | `ignite-element` re-renders on snapshots; events require explicit `subscribeEvent` | `integration/ignite-element-bridge.ts`; FAS `compare-view.tsx` |
@@ -99,7 +99,7 @@ The remaining friction is entirely in *declaring the wiring*.
 ### 1. Declarative `subscriptions` in the topology
 
 ```ts
-defineActorWebTopology({
+defineTopology({
   contractVersion: "0.1.0",
   nodes: { local: node(FAS_NODE) },
   actors: { compare, pipeline, actorSystem, decisions },
@@ -235,8 +235,8 @@ review).
 
 - T1. Add `subscribers[]` overload to `system.subscribe` + tests. Done.
   (`auto-publishing`, `event-emission`). Lowest risk, no topology change.
-- T2. Add `subscriptions` to `ActorWebTopologyInput` and
-  `defineActorWebTopology`; wire on node start, unwire on `stop()`; type-check
+- T2. Add `subscriptions` to `TopologyInput` and
+  `defineTopology`; wire on node start, unwire on `stop()`; type-check
   `from`/`to` against actor ids. Tests for wiring + restart durability.
 - T3. Type `events` against the publisher emitted-event union.
 - T4. Delete `EventBrokerActor`, `SYSTEM_EVENT_BROKER_ADDRESS`,

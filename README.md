@@ -198,9 +198,9 @@ await system.subscribe(actor, {
 Erlang-style fault tolerance, declared in the topology:
 
 ```typescript
-import { actor, defineActorWebTopology, node, supervisor } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node, supervisor } from '@actor-web/runtime/topology';
 
-const topology = defineActorWebTopology({
+const topology = defineTopology({
   nodes: { local: node('local-node') },
   actors: {
     worker: actor({

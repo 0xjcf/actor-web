@@ -1,4 +1,4 @@
-import { actor, defineActorWebTopology, node, supervisor } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node, supervisor } from '@actor-web/runtime/topology';
 import {
   DISPATCHER_ACTOR_ID,
   DRIVER_DIRECTORY_ACTOR_ID,
@@ -28,7 +28,7 @@ import { createServiceWorkerProofBehavior } from './logistics-service-worker-beh
 import { createShipmentBehavior } from './logistics-shipment-behavior';
 import { createShipmentDirectoryBehavior } from './logistics-shipment-directory-behavior';
 
-export const logistics = defineActorWebTopology({
+export const logistics = defineTopology({
   contractVersion: '1.0.0',
 
   nodes: {

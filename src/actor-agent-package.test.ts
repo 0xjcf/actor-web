@@ -14,7 +14,7 @@ describe('@actor-web/agent package surface', () => {
   it('exports the llm tool registry helper and agent-loop behavior constructor', async () => {
     const source = await readAgentPackageSource();
 
-    expect(source).toContain('export const ACTOR_WEB_LLM_TOOL_NAME');
+    expect(source).toContain('export const LLM_TOOL_NAME');
     expect(source).toContain('createActorAgentToolRegistry');
     expect(source).toContain('createAgentLoopBehavior');
   });

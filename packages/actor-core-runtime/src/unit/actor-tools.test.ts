@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ActorToolExecutor } from '../actor-tools.js';
 import { createActorToolbox } from '../actor-tools.js';
-import { actor, defineActorWebTopology, node, tool } from '../topology.js';
+import { actor, defineTopology, node, tool } from '../topology.js';
 
 type ScanInput = { readonly label: string };
 type ScanResult = { readonly accepted: true; readonly label: string };
@@ -169,7 +169,7 @@ describe('ActorToolbox', () => {
           })
           .build(),
     });
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       tools: [tool('provider.scan.verify')],
       nodes: {
         worker: node('worker'),

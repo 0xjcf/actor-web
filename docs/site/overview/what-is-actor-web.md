@@ -24,7 +24,7 @@ recovery, and location transparency.
   own state, reply to an `ask`, emit events, or send messages to other actors.
 - **Topology** — a declarative description of your system: which nodes exist,
   which actors run where, and how they are supervised
-  (`defineActorWebTopology`).
+  (`defineTopology`).
 - **Messages vs. events** — `send`/`ask` are directed (point-to-point); `emit`
   broadcasts a fact that any subscriber can react to. See
   [Subscriptions & events](/concepts/subscriptions-and-events).

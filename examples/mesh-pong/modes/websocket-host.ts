@@ -1,15 +1,11 @@
-import { type StartedActorWebNode, startActorWebNode } from '@actor-web/runtime/browser';
-import {
-  type ActorToolRegistry,
-  type ServedActorWebNode,
-  serveNode,
-} from '@actor-web/runtime/node';
+import { type StartedNode, startNode } from '@actor-web/runtime/browser';
+import { type ActorToolRegistry, type ServedNode, serveNode } from '@actor-web/runtime/node';
 import { PONG_NODE_ADDRESSES } from '../pong-contract';
 import { createPongControllerTools } from '../pong-controller';
 import { createPongTopology, pong } from '../pong-topology';
 
-type StartedPongNode = StartedActorWebNode<never>;
-type ServedPongNode = ServedActorWebNode<never>;
+type StartedPongNode = StartedNode<typeof pong>;
+type ServedPongNode = ServedNode<typeof pong>;
 type FlushableNode = {
   stop(): Promise<void>;
   system: {
@@ -71,14 +67,14 @@ export async function startMeshPongWebSocketHost(
   await ensureGlobalWebSocket();
 
   try {
-    const b = await serveNode(pong as never, {
+    const b = await serveNode(pong, {
       node: 'b',
       transport: { listen: true, heartbeatIntervalMs: 0 },
       tools,
     });
     startedNodes.push(b);
 
-    const a = await serveNode(pong as never, {
+    const a = await serveNode(pong, {
       node: 'a',
       transport: { listen: true, heartbeatIntervalMs: 0 },
       tools,
@@ -89,7 +85,7 @@ export async function startMeshPongWebSocketHost(
     });
     startedNodes.push(a);
 
-    const server = await serveNode(pong as never, {
+    const server = await serveNode(pong, {
       node: 'server',
       transport: { listen: true, heartbeatIntervalMs: 0 },
       tools,
@@ -101,7 +97,7 @@ export async function startMeshPongWebSocketHost(
     });
     startedNodes.push(server);
 
-    const client = await startActorWebNode(topology as never, {
+    const client = await startNode(topology, {
       node: 'client',
       peers: {
         server: requireTransportUrl(server, 'server'),

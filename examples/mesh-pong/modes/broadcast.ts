@@ -3,15 +3,15 @@ import {
   type ActorToolRegistry,
   type BroadcastChannelLike,
   createBroadcastChannelMessageTransport,
-  type StartedActorWebNode,
-  startActorWebNode,
+  startNode as defaultStartNode,
+  type StartedNode,
 } from '@actor-web/runtime/browser';
 import { createPongClientNodeAddress, PONG_NODE_ADDRESSES } from '../pong-contract';
 import { createPongControllerTools } from '../pong-controller';
 import { createPongTopology } from '../pong-topology';
 
 type PongTopology = ReturnType<typeof createPongTopology>;
-type StartedPongNode = StartedActorWebNode<PongTopology, MessageTransport>;
+type StartedPongNode = StartedNode<PongTopology, MessageTransport>;
 
 export interface MeshPongWebLock {
   readonly name: string;
@@ -31,7 +31,7 @@ export interface MeshPongBroadcastOptions {
   readonly broadcastChannelFactory?: (channelName: string) => BroadcastChannelLike;
   readonly tools?: ActorToolRegistry;
   readonly webLocks?: MeshPongWebLocks;
-  readonly startNode?: typeof startActorWebNode;
+  readonly startNode?: typeof defaultStartNode;
 }
 
 export interface StartedMeshPongBroadcast {
@@ -120,7 +120,7 @@ export async function startMeshPongBroadcastHost(
   const clientNodeAddress = createPongClientNodeAddress(sessionId);
   const topology = createPongTopology({ clientNodeAddress });
   const startedNodes: StartedPongNode[] = [];
-  const startNode = options.startNode ?? startActorWebNode;
+  const startNode = options.startNode ?? defaultStartNode;
 
   try {
     const server = await startNode(topology, {
@@ -181,7 +181,7 @@ export async function startMeshPongBroadcastClient(
   const channelName = options.channelName ?? 'mesh-pong';
   const clientNodeAddress = createPongClientNodeAddress(sessionId);
   const topology = createPongTopology({ clientNodeAddress });
-  const startNode = options.startNode ?? startActorWebNode;
+  const startNode = options.startNode ?? defaultStartNode;
   let client: StartedPongNode | null = null;
 
   try {

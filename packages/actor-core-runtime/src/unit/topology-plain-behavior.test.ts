@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { startRuntime } from '../actor-web-client.js';
-import { actor, defineActorWebTopology, node } from '../topology.js';
+import { actor, defineTopology, node } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 type CounterMsg = { type: 'INCREMENT' };
@@ -13,7 +13,7 @@ const counterBehavior = defineBehavior<CounterMsg>()
 
 describe('actor() accepts a plain built behavior value (no factory)', () => {
   it('runs a topology actor defined with a behavior value', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: { local: node('local') },
       actors: {
         counter: actor({ id: 'counter', node: 'local', behavior: counterBehavior }),
@@ -34,7 +34,7 @@ describe('actor() accepts a plain built behavior value (no factory)', () => {
 
   it('runs a topology actor defined with an un-built behavior builder (.build() optional)', async () => {
     // No trailing `.build()` — the runtime materializes the builder under the hood.
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: { local: node('local') },
       actors: {
         counter: actor({

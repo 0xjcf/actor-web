@@ -1,6 +1,6 @@
 import { createInMemoryAgentSessionCheckpointStore } from '@actor-web/runtime';
 import { startRuntime } from '@actor-web/runtime/browser';
-import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node, tool } from '@actor-web/runtime/topology';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   type ActorAgentLlmProvider,
@@ -29,7 +29,7 @@ function scriptedProvider(...ids: string[]) {
 }
 
 async function host(llm: ActorAgentLlmProvider, options: ActorAgentLoopOptions = {}) {
-  const topology = defineActorWebTopology({
+  const topology = defineTopology({
     nodes: { local: node('local') },
     tools: [tool('llm'), tool('read')],
     actors: {

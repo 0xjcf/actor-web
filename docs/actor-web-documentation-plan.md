@@ -197,7 +197,7 @@ written fresh.
 - **API Reference**
   - `@actor-web/runtime` (`.`) — *seeded from* `API.md` + export inventory
   - `@actor-web/runtime/topology` — topology DSL (`actor`/`node`/`supervisor`/
-    `tool`, `defineActorWebTopology`)
+    `tool`, `defineTopology`)
   - `@actor-web/runtime/browser` — sources/clients
   - `@actor-web/runtime/node` — `serveNode`, HTTP ingress
   - `@actor-web/testing` — *net-new* (also add the missing package README)

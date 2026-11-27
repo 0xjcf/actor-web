@@ -1,5 +1,5 @@
-import type { ActorRef, ActorWebGatewaySocket } from '@actor-web/runtime/browser';
-import { type ServedActorWebNode, serveNode } from '@actor-web/runtime/node';
+import type { ActorRef, GatewaySocket } from '@actor-web/runtime/browser';
+import { type ServedNode, serveNode } from '@actor-web/runtime/node';
 import { FAS_AGENT_TOOL_ACCESS, type FasAgentRole } from './fas-contract';
 import { createFasTaskLoop, type FasAgentPorts } from './fas-task-loop';
 import {
@@ -15,8 +15,8 @@ export interface FasAgentLoopExampleOptions {
   readonly tools?: DeterministicFasToolOptions;
 }
 
-type FasServedNode = ServedActorWebNode<typeof fasAgentLoop>;
-type GatewaySocketFactory = (url: string) => ActorWebGatewaySocket;
+type FasServedNode = ServedNode<typeof fasAgentLoop>;
+type GatewaySocketFactory = (url: string) => GatewaySocket;
 
 export type FasAgentLoopExampleRuntime = ReturnType<typeof createFasTaskLoop> & {
   readonly tools: DeterministicFasTools;
@@ -44,11 +44,11 @@ function createFasTaskBoardSource(gatewayUrl: string, createSocket: GatewaySocke
 
 async function resolveGatewaySocketFactory(): Promise<GatewaySocketFactory> {
   if (typeof globalThis.WebSocket !== 'undefined') {
-    return (url) => new globalThis.WebSocket(url) as ActorWebGatewaySocket;
+    return (url) => new globalThis.WebSocket(url) as GatewaySocket;
   }
 
   const { WebSocket: NodeWebSocket } = await import('ws');
-  return (url) => new NodeWebSocket(url) as unknown as ActorWebGatewaySocket;
+  return (url) => new NodeWebSocket(url) as unknown as GatewaySocket;
 }
 
 async function waitForWorkerPeer(coordinator: FasServedNode): Promise<void> {

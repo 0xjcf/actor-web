@@ -40,7 +40,7 @@ a WebSocket, detects sequence gaps, and resyncs from a bounded replay tail. It i
 *not* the inter-node [transport](/concepts/transport) — it's the consumer-facing
 boundary.
 
-`opts` is `ActorWebSourceOptions`: gateway/transport configuration
+`opts` is `GatewaySourceOptions`: gateway/transport configuration
 (`{ gateway: { url, scope?, auth? } }`, `streamId?`, `createSocket?`,
 `clientVersion?`), not actor identity. The actor is already fixed by which
 factory you called. `gateway.scope.params` is where product code puts tenant,

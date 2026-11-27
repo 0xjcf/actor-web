@@ -57,9 +57,9 @@ try {
 
 ```ts
 import { startRuntime } from '@actor-web/runtime';
-import { actor, defineActorWebTopology, node } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node } from '@actor-web/runtime/topology';
 
-const topology = defineActorWebTopology({
+const topology = defineTopology({
   nodes: { local: node('local') },
   actors: {
     counter: actor({ id: 'counter', node: 'local', behavior: counter }),

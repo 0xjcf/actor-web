@@ -24,12 +24,15 @@ in Node built-ins:
 | Import | Use for |
 | --- | --- |
 | `@actor-web/runtime` | Core: `defineBehavior`, messages, local runtime. |
-| `@actor-web/runtime/topology` | `defineActorWebTopology` and the DSL. |
+| `@actor-web/runtime/topology` | `defineTopology` and the DSL. |
 | `@actor-web/runtime/browser` | Browser-safe sources & clients. |
 | `@actor-web/runtime/node` | `serveNode`, HTTP ingress — server only. |
 | `@actor-web/testing` | XState machine analysis helpers. |
 
 See the [API entry-point map](/api/) for what each exports.
+
+The short names in these docs are from this checkout. With the published
+`@actor-web/runtime@0.3.0`, the topology factory is `defineActorWebTopology`.
 
 ## Next
 

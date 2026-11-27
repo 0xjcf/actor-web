@@ -1,4 +1,4 @@
-import { defineActorWebTopology, node } from '@actor-web/runtime/topology';
+import { defineTopology, node } from '@actor-web/runtime/topology';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createLatticeState,
@@ -225,7 +225,7 @@ describe('lattice activation lifecycle', () => {
           sentMessages.push(message);
         }),
     };
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: { local: node('local') },
       actors: {
         workspace: lattice({ id: 'workspace-lattice', node: 'local' }),

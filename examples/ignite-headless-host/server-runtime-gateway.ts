@@ -8,12 +8,7 @@ import type {
   RuntimeTransportStats,
   RuntimeTransportTelemetryObserver,
 } from '@actor-web/runtime';
-import {
-  type ServedActorWebHttp,
-  type ServedActorWebNode,
-  serveActorWebHttp,
-  serveNode,
-} from '@actor-web/runtime/node';
+import { type ServedHttp, type ServedNode, serveHttp, serveNode } from '@actor-web/runtime/node';
 import type {
   DispatcherCommand,
   DispatcherContext,
@@ -255,7 +250,7 @@ export function createLogisticsRuntimeGatewayServer(
   const lifecyclePackedDelayMs = options.lifecyclePackedDelayMs ?? 6_000;
   const lifecycleShippedDelayMs = options.lifecycleShippedDelayMs ?? 10_000;
   const lifecycleTerminalDelayMs = options.lifecycleTerminalDelayMs ?? 20_000;
-  let servedNode: ServedActorWebNode<typeof logistics> | null = null;
+  let servedNode: ServedNode<typeof logistics> | null = null;
   let shipmentActor: ActorRef<ShipmentContext, ShipmentCommand> | null = null;
   let logisticsSupervisorActor: ActorRef<
     LogisticsSupervisorContext,
@@ -266,7 +261,7 @@ export function createLogisticsRuntimeGatewayServer(
   let providerHqActor: ActorRef<ProviderHqContext, ProviderHqCommand> | null = null;
   const shipmentActors = new Map<string, ActorRef<ShipmentContext, ShipmentCommand>>();
   const providerShipmentActors = new Map<string, ActorRef<unknown, ProviderShipmentCommand>>();
-  let restServer: ServedActorWebHttp | null = null;
+  let restServer: ServedHttp | null = null;
   let restUrl: string | null = null;
   const lifecycleTimers = new Set<ReturnType<typeof setTimeout>>();
   const runtimeUnsubscribers = new Set<() => void>();
@@ -907,7 +902,7 @@ export function createLogisticsRuntimeGatewayServer(
     return { shipmentId, status: plan ? 'route-assigned' : 'route-requested' };
   };
 
-  const serveRest = async (runtime: ServedActorWebNode<typeof logistics>): Promise<void> => {
+  const serveRest = async (runtime: ServedNode<typeof logistics>): Promise<void> => {
     const resetCurrentShipment = async (): Promise<{ status: 'idle' }> => {
       clearLifecycleTimers();
       const activeShipmentActorEntries = Array.from(shipmentActors.entries());
@@ -931,7 +926,7 @@ export function createLogisticsRuntimeGatewayServer(
       return { status: 'idle' };
     };
 
-    restServer = await serveActorWebHttp(runtime)
+    restServer = await serveHttp(runtime)
       .for(shipmentActorDescriptor)
       .post('/shipments', async (request, response) => {
         const body = bodyRecord(request.body);
@@ -956,8 +951,8 @@ export function createLogisticsRuntimeGatewayServer(
       .get('/shipments/current', (_request, response) => {
         return response.ok(shipmentActor?.getSnapshot().context ?? null);
       })
-      .get('/shipments/count', async (_request, response, actorWeb) => {
-        const count = await actorWeb.actor.ask<number>({ type: 'GET_SHIPMENT_COUNT' });
+      .get('/shipments/count', async (_request, response, context) => {
+        const count = await context.actor.ask<number>({ type: 'GET_SHIPMENT_COUNT' });
         return response.ok({ count });
       })
       .get('/provider/status', (_request, response) => {
@@ -990,23 +985,23 @@ export function createLogisticsRuntimeGatewayServer(
         });
         return response.accepted(providerStatus());
       })
-      .get('/runtime/status', (_request, response, actorWeb) => {
-        const transportStatus = actorWeb.runtime.getTransportStatus();
+      .get('/runtime/status', (_request, response, context) => {
+        const transportStatus = context.runtime.getTransportStatus();
         const transportStats = readTransportStats(transport());
         const peers = transportStatus.peers.map((peer) =>
           normalizePeerStatus(peer, transportStats)
         );
         const workerPeer = normalizePeerStatus(
-          actorWeb.runtime.getPeerStatus(workerNode),
+          context.runtime.getPeerStatus(workerNode),
           transportStats
         );
         const providerPeer = normalizePeerStatus(
-          actorWeb.runtime.getPeerStatus(providerNode),
+          context.runtime.getPeerStatus(providerNode),
           transportStats
         );
         return response.ok({
-          gatewayUrl: actorWeb.runtime.getGatewayUrl(),
-          transportUrl: actorWeb.runtime.getTransportUrl(),
+          gatewayUrl: context.runtime.getGatewayUrl(),
+          transportUrl: context.runtime.getTransportUrl(),
           lifecycleMode,
           provider: {
             runtimeEnabled: providerRuntimeEnabled,

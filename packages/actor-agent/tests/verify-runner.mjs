@@ -39,7 +39,7 @@ Module.prototype.require = function (id) {
 };
 try {
   const agent = require('@actor-web/agent');
-  assert.equal(agent.ACTOR_WEB_LLM_TOOL_NAME, 'llm');
+  assert.equal(agent.LLM_TOOL_NAME, 'llm');
   assert.equal(typeof agent.createLlmProvider, 'function');
   const { createAgentRunner, createAgent } = require('@actor-web/agent/runner');
   assert.deepEqual(await smoke(createAgentRunner, createAgent), { text: 'verified' });

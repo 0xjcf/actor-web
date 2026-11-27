@@ -41,7 +41,7 @@
   <g transform="translate(40,150)">
     <rect width="1120" height="69" rx="10" class="runtime"/>
     <text x="18" y="26" class="kicker blue">SHARED CONTRACT  ·  DESCRIBES OWNERSHIP; DOES NOT DEPLOY MACHINES</text>
-    <text x="18" y="51" class="api">defineActorWebTopology({ nodes, actors, tools })</text>
+    <text x="18" y="51" class="api">defineTopology({ nodes, actors, tools })</text>
     <text x="508" y="51" class="body">node() = location · actor() = actor definition · tool() = named port</text>
   </g>
 
@@ -49,7 +49,7 @@
     <text class="kicker">01  /  BROWSER AND OPERATOR</text>
     <rect y="13" width="546" height="77" rx="9" class="runtime"/>
     <text x="16" y="39" class="heading">Dashboard · observe both authorized lanes</text>
-    <text x="16" y="61" class="api">createActorWebReadModelClient(...)</text>
+    <text x="16" y="61" class="api">createReadModelClient(...)</text>
     <text x="16" y="81" class="small sub">snapshot(), subscribe(), subscribeEvent(), transportStatus()</text>
     <rect x="574" y="13" width="546" height="77" rx="9" class="runtime"/>
     <text x="590" y="39" class="heading">Operator controls · explicit actions only</text>

@@ -1,6 +1,6 @@
 import type { ActorAddress } from '@actor-web/runtime';
 import { type ActorSystem, defineBehavior, startRuntime } from '@actor-web/runtime/browser';
-import { actor, defineActorWebTopology, node } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node } from '@actor-web/runtime/topology';
 import { type ReviewHandoff, reviewHandoff } from './check-protocol.js';
 import {
   type Assignment,
@@ -245,7 +245,7 @@ export async function startTeams({
     return { reply: ok(allocated) }; // Allocation creates an idle actor; it never sends Run.
   });
 
-  const topology = defineActorWebTopology({
+  const topology = defineTopology({
     nodes: { local: node('sdlc') },
     actors: { orchestrator: actor({ id: 'orchestrator', node: 'local', behavior: orchestrator }) },
   });

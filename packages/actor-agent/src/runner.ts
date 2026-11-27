@@ -6,9 +6,8 @@ import {
   createActorToolbox,
   startRuntime,
 } from '@actor-web/runtime/browser';
-import { actor, defineActorWebTopology, node, tool } from '@actor-web/runtime/topology';
+import { actor, defineTopology, node, tool } from '@actor-web/runtime/topology';
 import {
-  ACTOR_WEB_LLM_TOOL_NAME,
   type ActorAgentLlmMessage,
   type ActorAgentLlmProvider,
   type ActorAgentLlmRequest,
@@ -18,6 +17,7 @@ import {
   type ActorAgentTokenUsage,
   type ActorAgentToolCall,
   createAgentLoopBehavior,
+  LLM_TOOL_NAME,
   type ModelToolDefinition,
 } from './index.js';
 import {
@@ -275,7 +275,7 @@ function isToken(value: unknown): value is string {
 }
 
 function checkToolName(name: unknown): asserts name is string {
-  if (!isToken(name) || name === ACTOR_WEB_LLM_TOOL_NAME || Object.hasOwn(Object.prototype, name)) {
+  if (!isToken(name) || name === LLM_TOOL_NAME || Object.hasOwn(Object.prototype, name)) {
     invalidConfig('Invalid or reserved application tool name.');
   }
 }
@@ -1095,7 +1095,7 @@ export function createAgentRunner<Task, Purpose extends string>(
   const implementations = new Map(
     config.effective.map(({ implementation }) => [implementation.name, implementation])
   );
-  const names = [ACTOR_WEB_LLM_TOOL_NAME, ...implementations.keys()];
+  const names = [LLM_TOOL_NAME, ...implementations.keys()];
   let active = false;
 
   const runner = {
@@ -1167,7 +1167,7 @@ export function createAgentRunner<Task, Purpose extends string>(
         }
         scope.check();
 
-        const topology = defineActorWebTopology({
+        const topology = defineTopology({
           nodes: { local: node(localNode) },
           tools: names.map((name) => tool(name)),
           actors: {

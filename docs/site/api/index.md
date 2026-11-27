@@ -13,7 +13,7 @@ the narrowest one that fits — browser code should not pull in Node entry point
 | Import | Use for |
 | --- | --- |
 | `@actor-web/runtime` | Core: [`defineBehavior`](/api/define-behavior), messages, runtime client. |
-| `@actor-web/runtime/topology` | [`defineActorWebTopology`](/api/topology) and the `actor`/`node`/`supervisor`/`tool` DSL. |
+| `@actor-web/runtime/topology` | [`defineTopology`](/api/topology) and the `actor`/`node`/`supervisor`/`tool` DSL. |
 | `@actor-web/runtime/browser` | Browser-safe sources & clients (no Node built-ins). |
 | `@actor-web/runtime/node` | [`serveNode`](/api/runtimes), HTTP ingress — server only. |
 | `@actor-web/agent` | `createAgentLoopBehavior` and provider-facing tools (`ModelToolDefinition`, `createLlmToolRegistry`). |
@@ -24,6 +24,20 @@ the narrowest one that fits — browser code should not pull in Node entry point
 | `@actor-web/testing` | [State-machine analysis](/api/testing) test helpers. |
 
 The agent subpaths above are present in this checkout, not in `@actor-web/agent@0.2.2`.
+
+### Migrating existing imports
+
+In this checkout the `ActorWeb`-named exports are deprecated aliases. Update
+the imported names on the **same entry point**; no runtime or wire migration
+is needed. For example, use `defineTopology` instead of `defineActorWebTopology`,
+`startNode` instead of `startActorWebNode`, and `LLM_TOOL_NAME` instead of
+`ACTOR_WEB_LLM_TOOL_NAME` (the tool is still named `"llm"`).
+
+For a gateway-backed projection, use `createGatewayReadModelSource`; for a
+command-capable gateway source use `createGatewayCommandSource`. The ref-backed
+`createActorReadModelSource` and `createActorCommandSource` have not changed.
+`ActorMessageOf<T>` extracts the message from an actor descriptor; `ActorMessage`
+is the base envelope, not a replacement for the extractor.
 
 ## Actor runtime or agent runner?
 

@@ -21,7 +21,7 @@ You are continuing work on **actor-web** (a pure actor-model runtime for TS, OTP
 
 - **A1** no-handler `build()` defaults (machine/FSM is the behavior; `ask` resolves snapshot).
 - **A2** XState machine `emit()` bridged to the subscribe stream (`machine-actor.ts`).
-- **T2** declarative `subscriptions: [{ from, to[], events[] }]` in `defineActorWebTopology` (`topology.ts` + `actor-web-client.ts`).
+- **T2** declarative `subscriptions: [{ from, to[], events[] }]` in `defineTopology` (`topology.ts` + `actor-web-client.ts`).
 - **T3** subscription `from`/`to`/`events` type-checked against actors + the publisher's emitted union.
 - **T4** EventBrokerActor deleted; AutoPublishingRegistry canonical.
 - **A3** plain-value behaviors verified in `actor()`.
@@ -37,7 +37,7 @@ All are **breaking renames/ergonomics on a pre-1.0, unpublished API → do clean
 2. **Make `.build()` optional.** A behavior builder should be usable directly: `actor({ behavior: defineBehavior().withMachine(m) })` with no trailing `.build()`. The runtime should auto-build under the hood.
    - `actor-system-impl.ts` spawn ALREADY detects a builder: `if ('build' in behaviorOrBuilder && typeof behaviorOrBuilder.build === 'function')`. But the **topology path does not**: `materializeActorWebBehavior` in `actor-web-node-runtime.ts` does `typeof behavior === 'function' ? behavior(params) : behavior` — a builder is an object, so it's passed un-built and fails (no `onMessage`).
    - Fix: in `materializeActorWebBehavior` (and any factory-resolution path), detect a builder (`'build' in resolved && typeof resolved.build === 'function'`) and call `.build()`. Keep supporting: built value, zero/one-arg factory, **and** builder. `.build()` stays available (explicit) but optional.
-   - Verify the typed-behavior helpers in `topology.ts` (`ActorWebBehaviorContext/Message/Event`) still infer correctly when `behavior` is an un-built builder (the builder carries `__contextType`/`__messageType` phantoms — confirm or extend).
+   - Verify the typed-behavior helpers in `topology.ts` (`BehaviorContext/Message/Event`) still infer correctly when `behavior` is an un-built builder (the builder carries `__contextType`/`__messageType` phantoms — confirm or extend).
 
 3. **`startActorWebLocalRuntime(topology)` → `startRuntime(topology)`** and **`serveActorWebNode(topology, { node })` → `serveNode(topology, { node })`.** Shorter, cleaner entry points. Rename exports + all usages + docs. (Check the `/node` entry for `serveActorWebNode` and `actor-web-client.ts` for the local runtime.)
 

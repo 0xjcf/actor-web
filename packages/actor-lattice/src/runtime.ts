@@ -1,9 +1,4 @@
-import type {
-  ActorRef,
-  ActorWebTopology,
-  ActorWebTopologyInput,
-  StartedActorWebLocalRuntime,
-} from '@actor-web/runtime';
+import type { ActorRef, StartedLocalRuntime, Topology, TopologyInput } from '@actor-web/runtime';
 import { deriveDependencyId } from './dependency.js';
 import type { DependencyDefinition, LatticeMessage, RegisteredDependency } from './protocol.js';
 import { LATTICE_ACTOR_META, LATTICE_DEPENDENCIES_META } from './topology.js';
@@ -40,7 +35,7 @@ function isLatticeActorDefinition(definition: unknown): boolean {
   );
 }
 
-export function collectLatticeActors<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
+export function collectLatticeActors<TTopology extends Topology<TopologyInput>>(
   topology: TTopology
 ): readonly string[] {
   return Object.entries(topology.actors)
@@ -48,9 +43,9 @@ export function collectLatticeActors<TTopology extends ActorWebTopology<ActorWeb
     .map(([actorKey]) => actorKey);
 }
 
-export function collectLatticeRegistrations<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
->(topology: TTopology): readonly RegisteredDependency[] {
+export function collectLatticeRegistrations<TTopology extends Topology<TopologyInput>>(
+  topology: TTopology
+): readonly RegisteredDependency[] {
   return Object.entries(topology.actors).flatMap(([actorKey, definition]) => {
     const dependencies = (definition as unknown as Record<string, unknown>)[
       LATTICE_DEPENDENCIES_META
@@ -67,9 +62,9 @@ export function collectLatticeRegistrations<
   });
 }
 
-export function collectLatticeSubscriptions<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
->(topology: TTopology) {
+export function collectLatticeSubscriptions<TTopology extends Topology<TopologyInput>>(
+  topology: TTopology
+) {
   const subscriptions = new Map<string, { from: string; to: string; events: string[] }>();
 
   for (const dependency of collectLatticeRegistrations(topology)) {
@@ -87,8 +82,8 @@ export function collectLatticeSubscriptions<
   return [...subscriptions.values()];
 }
 
-export async function wireLatticeRuntime<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
-  runtime: StartedActorWebLocalRuntime<TTopology>,
+export async function wireLatticeRuntime<TTopology extends Topology<TopologyInput>>(
+  runtime: StartedLocalRuntime<TTopology>,
   options: WireLatticeRuntimeOptions = {}
 ) {
   const registrations = collectLatticeRegistrations(runtime.topology);

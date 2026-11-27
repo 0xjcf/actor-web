@@ -2,16 +2,16 @@
  * @file actor-web-supervisor-wiring.test.ts
  * @description Pins for how topology supervisor() declarations reach the
  * runtime: co-location validation and strategy defaulting in
- * defineActorWebTopology, group resolution in
+ * defineTopology, group resolution in
  * resolveOwnedActorWebSupervisorGroups (including the parameterized-child
- * skip/throw matrix), and host registration through serveNode/startActorWebNode.
+ * skip/throw matrix), and host registration through serveNode/startNode.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import { resolveOwnedActorWebSupervisorGroups } from '../actor-web-node-runtime.js';
 import { serveNode } from '../serve-actor-web-node.js';
-import { startActorWebNode } from '../start-actor-web-node.js';
-import { actor, defineActorWebTopology, node, supervisor } from '../topology.js';
+import { startNode } from '../start-actor-web-node.js';
+import { actor, defineTopology, node, supervisor } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 type CounterMessage = { type: 'INC' } | { type: 'GET' } | { type: 'BOOM' };
@@ -33,7 +33,7 @@ function createCrashableCounter() {
 }
 
 function buildTopology(strategy?: 'one-for-one' | 'one-for-all' | 'rest-for-one' | 'escalate') {
-  return defineActorWebTopology({
+  return defineTopology({
     nodes: {
       server: node('wiring-server-node'),
       worker: node('wiring-worker-node'),
@@ -49,10 +49,10 @@ function buildTopology(strategy?: 'one-for-one' | 'one-for-all' | 'rest-for-one'
   });
 }
 
-describe('defineActorWebTopology supervisor co-location', () => {
+describe('defineTopology supervisor co-location', () => {
   it('rejects supervisor children on a different node than the supervisor', () => {
     expect(() =>
-      defineActorWebTopology({
+      defineTopology({
         nodes: {
           server: node('server-node'),
           worker: node('worker-node'),
@@ -75,7 +75,7 @@ describe('defineActorWebTopology supervisor co-location', () => {
 
 describe('resolveOwnedActorWebSupervisorGroups', () => {
   it('returns only groups owned by the node with children as paths in declaration order', () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('owned-server-node'),
         worker: node('owned-worker-node'),
@@ -106,7 +106,7 @@ describe('resolveOwnedActorWebSupervisorGroups', () => {
   });
 
   it('skips parameterized children of one-for-one groups (fas-agent-loop shape)', () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: {
         server: node('param-server-node'),
       },
@@ -139,7 +139,7 @@ describe('resolveOwnedActorWebSupervisorGroups', () => {
 
   it('throws for parameterized children in one-for-all, rest-for-one, and escalate groups', () => {
     for (const strategy of ['one-for-all', 'rest-for-one', 'escalate'] as const) {
-      const topology = defineActorWebTopology({
+      const topology = defineTopology({
         nodes: {
           server: node(`throw-${strategy}-node`),
         },
@@ -168,7 +168,7 @@ describe('serveNode supervisor wiring', () => {
     'registers owned supervisor groups and drives a group restart end to end',
     { timeout: 30_000 },
     async () => {
-      const topology = defineActorWebTopology({
+      const topology = defineTopology({
         nodes: {
           server: node('serve-supervised-node'),
         },
@@ -243,8 +243,8 @@ describe('serveNode supervisor wiring', () => {
     }
   );
 
-  it('startActorWebNode registers owned supervisor groups', async () => {
-    const topology = defineActorWebTopology({
+  it('startNode registers owned supervisor groups', async () => {
+    const topology = defineTopology({
       nodes: {
         worker: node('start-supervised-node'),
       },
@@ -256,7 +256,7 @@ describe('serveNode supervisor wiring', () => {
       },
     });
 
-    const started = await startActorWebNode(topology, {
+    const started = await startNode(topology, {
       node: 'worker',
       transport: { heartbeatIntervalMs: 0 },
     });

@@ -89,12 +89,22 @@ export type {
   ActorWebLocalRuntimeSourceOptions,
   ActorWebLocalRuntimeSources,
   ActorWebReadModelClient,
+  Client,
+  ClientOptions,
+  LocalRuntimeActorSource,
+  LocalRuntimeSourceOptions,
+  LocalRuntimeSources,
+  ReadModelClient,
   StartActorWebLocalRuntimeOptions,
   StartedActorWebLocalRuntime,
+  StartedLocalRuntime,
+  StartLocalRuntimeOptions,
 } from './actor-web-client.js';
 export {
   createActorWebClient,
   createActorWebReadModelClient,
+  createClient,
+  createReadModelClient,
   startRuntime,
 } from './actor-web-client.js';
 export type {
@@ -102,11 +112,20 @@ export type {
   ActorWebGatewaySocket,
   ActorWebSourceGatewayOptions,
   ActorWebSourceOptions,
+  AddressSourceInput,
   ClosableActorWebCommandSource,
   ClosableActorWebReadModelSource,
   ClosableActorWebSource,
   ClosableActorWebSourceHandle,
   ClosableActorWebTraceSource,
+  ClosableCommandSource,
+  ClosableReadModelSource,
+  ClosableSource,
+  ClosableSourceHandle,
+  ClosableTraceSource,
+  GatewaySocket,
+  GatewaySourceOptions,
+  SourceGatewayOptions,
 } from './actor-web-source.js';
 export {
   createActorWebCommandSource,
@@ -114,6 +133,11 @@ export {
   createActorWebSource,
   createActorWebSourceHandle,
   createActorWebTraceSource,
+  createGatewayCommandSource,
+  createGatewayReadModelSource,
+  createGatewaySource,
+  createGatewayTraceSource,
+  createSourceHandle,
 } from './actor-web-source.js';
 export type { AdapterFailureOptions } from './adapter-failure.js';
 export { raiseAdapterFailure } from './adapter-failure.js';
@@ -374,6 +398,7 @@ export type {
   ProjectionTransportState,
   ProjectionTransportStatus,
 } from './projection-transport.js';
+export { type ActorRequest, ask, type ReplyOf } from './request-reply.js';
 export type {
   RuntimeGatewayAuthProvider,
   RuntimeGatewayAuthResult,
@@ -561,6 +586,11 @@ export type {
 } from './testing/in-memory-message-transport.js';
 export { createInMemoryMessageTransportNetwork } from './testing/in-memory-message-transport.js';
 export type {
+  ActorContextOf,
+  ActorDefinition,
+  ActorDescriptor,
+  ActorEventOf,
+  ActorMessageOf,
   ActorWebActorAddress,
   ActorWebActorContext,
   ActorWebActorDefinition,
@@ -574,8 +604,13 @@ export type {
   ActorWebSupervisorDescriptor,
   ActorWebTopology,
   ActorWebTopologyInput,
+  NodeDefinition,
+  SupervisorDefinition,
+  SupervisorDescriptor,
+  Topology,
+  TopologyInput,
 } from './topology.js';
-export { actor, defineActorWebTopology, node, supervisor } from './topology.js';
+export { actor, defineActorWebTopology, defineTopology, node, supervisor } from './topology.js';
 // Public transport authoring surface (defineTransport / fromDuplex)
 export type {
   TransportDuplex,

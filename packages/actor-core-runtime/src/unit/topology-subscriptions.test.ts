@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { emit, setup } from 'xstate';
 import { startRuntime } from '../actor-web-client.js';
-import { actor, defineActorWebTopology, node } from '../topology.js';
+import { actor, defineTopology, node } from '../topology.js';
 import { defineBehavior } from '../unified-actor-builder.js';
 
 type PingEvent = { type: 'PING' };
@@ -41,7 +41,7 @@ function createCollector() {
 describe('topology declarative subscriptions', () => {
   it('wires a declared subscription on start so a publisher emit reaches the subscriber', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: { local: node('local') },
       actors: {
         emitter: actor({ id: 'emitter', node: 'local', behavior: createEmitter }),
@@ -70,7 +70,7 @@ describe('topology declarative subscriptions', () => {
   });
 
   it('fans out to multiple subscribers via to: [...]', async () => {
-    const topology = defineActorWebTopology({
+    const topology = defineTopology({
       nodes: { local: node('local') },
       actors: {
         emitter: actor({ id: 'emitter', node: 'local', behavior: createEmitter }),
@@ -99,20 +99,20 @@ describe('topology declarative subscriptions', () => {
     };
 
     // Valid: PONG is in the emitter's emitted-event union.
-    defineActorWebTopology({
+    defineTopology({
       nodes: { local: node('local') },
       actors,
       subscriptions: [{ from: 'emitter', to: 'collector', events: ['PONG'] }],
     });
 
-    defineActorWebTopology({
+    defineTopology({
       nodes: { local: node('local') },
       actors,
       // @ts-expect-error - 'NOPE' is not an event the emitter emits
       subscriptions: [{ from: 'emitter', to: 'collector', events: ['NOPE'] }],
     });
 
-    defineActorWebTopology({
+    defineTopology({
       nodes: { local: node('local') },
       actors,
       // @ts-expect-error - 'ghost' is not an actor key

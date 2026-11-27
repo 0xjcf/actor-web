@@ -30,7 +30,7 @@ npm install @actor-web/runtime @actor-web/lattice
 ```ts
 import { dependsOn, lattice, wireLatticeRuntime } from '@actor-web/lattice';
 import { defineBehavior, startRuntime } from '@actor-web/runtime';
-import { defineActorWebTopology, node } from '@actor-web/runtime/topology';
+import { defineTopology, node } from '@actor-web/runtime/topology';
 
 const plannerBehavior = defineBehavior<{ type: 'DEPENDENCY_SATISFIED' }>()
   .withContext({ activated: false })
@@ -41,7 +41,7 @@ const plannerBehavior = defineBehavior<{ type: 'DEPENDENCY_SATISFIED' }>()
     return undefined;
   });
 
-const topology = defineActorWebTopology({
+const topology = defineTopology({
   nodes: { local: node('local') },
   actors: {
     workspace: lattice({ id: 'workflow-lattice', node: 'local' }),

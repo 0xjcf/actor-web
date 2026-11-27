@@ -326,8 +326,8 @@ Document in Parallel SDLC Teams is a generated summary, not a board column.
 
 ## Design note: proposed API names
 
-`defineTopology`, `toolHandlers`, `reply.ok`, `reply.refuse`, `ActorResult`,
+`toolHandlers`, `reply.ok`, `reply.refuse`, `ActorResult`,
 and `runtime.createClient` are design ideas, not the APIs used by these lessons.
-Current examples use `defineActorWebTopology`, `startRuntime`, plain
+Current examples use `defineTopology`, `startRuntime`, plain
 `{ reply, context }` handler returns, and refs from the started runtime.
 The [existing milestones](../todos.md) govern reusable specialist execution.

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { type StartedActorWebNode, startActorWebNode } from '@actor-web/runtime/browser';
+import { type StartedNode, startNode } from '@actor-web/runtime/browser';
 import { logistics } from './logistics-topology';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -30,7 +30,7 @@ type WorkerRuntimeStatus =
       actorId: string;
     };
 
-let runtimeNode: StartedActorWebNode<typeof logistics> | null = null;
+let runtimeNode: StartedNode<typeof logistics> | null = null;
 const routingActor = logistics.actors.routing;
 const serverNode = logistics.nodes.server.address;
 const workerNode = logistics.nodes.worker.address;
@@ -61,7 +61,7 @@ async function startRuntime(transportUrl: string): Promise<void> {
     actorId: routingActor.id,
   });
 
-  runtimeNode = await startActorWebNode(logistics, {
+  runtimeNode = await startNode(logistics, {
     node: 'worker',
     peers: {
       server: transportUrl,

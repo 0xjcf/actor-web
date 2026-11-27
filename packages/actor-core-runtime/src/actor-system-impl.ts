@@ -326,7 +326,7 @@ export function resolveSupervisionDecision(input: SupervisionDecisionInput): Sup
 /**
  * One topology supervisor() group as registered with the actor system.
  * `children` are actor PATHS in declaration order (declaration order is the
- * topology `children` array order, preserved by defineActorWebTopology).
+ * topology `children` array order, preserved by defineTopology).
  */
 export interface SupervisorGroupConfig {
   readonly key: string;

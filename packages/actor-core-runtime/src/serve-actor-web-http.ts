@@ -6,25 +6,25 @@ import {
   type ServerResponse,
 } from 'node:http';
 import type { ActorRef } from './actor-ref.js';
-import type { ServedActorWebNode } from './serve-actor-web-node.js';
+import type { ServedNode } from './serve-actor-web-node.js';
 import type {
-  ActorWebActorContext,
-  ActorWebActorDescriptor,
-  ActorWebActorMessage,
-  ActorWebTopology,
-  ActorWebTopologyInput,
+  ActorContextOf,
+  ActorDescriptor,
+  ActorMessageOf,
+  Topology,
+  TopologyInput,
 } from './topology.js';
 
-export type ActorWebHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
+export type HttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 
-export type ActorWebHttpActors<TTopology extends ActorWebTopology<ActorWebTopologyInput>> = {
+export type HttpActors<TTopology extends Topology<TopologyInput>> = {
   readonly [TKey in keyof TTopology['actors'] & string]: ActorRef<
-    ActorWebActorContext<TTopology['actors'][TKey]>,
-    ActorWebActorMessage<TTopology['actors'][TKey]>
+    ActorContextOf<TTopology['actors'][TKey]>,
+    ActorMessageOf<TTopology['actors'][TKey]>
   >;
 };
 
-export interface ActorWebHttpRequest {
+export interface HttpRequest {
   readonly raw: IncomingMessage;
   readonly method: string;
   readonly path: string;
@@ -34,104 +34,104 @@ export interface ActorWebHttpRequest {
   readonly body: unknown;
 }
 
-export interface ActorWebHttpResponseResult {
+export interface HttpResponseResult {
   readonly handled: true;
 }
 
-export interface ActorWebHttpResponse {
-  json(statusCode: number, body: unknown): ActorWebHttpResponseResult;
-  ok(body: unknown): ActorWebHttpResponseResult;
-  accepted(body: unknown): ActorWebHttpResponseResult;
-  created(body: unknown): ActorWebHttpResponseResult;
-  noContent(): ActorWebHttpResponseResult;
-  badRequest(body: unknown): ActorWebHttpResponseResult;
-  notFound(body: unknown): ActorWebHttpResponseResult;
-  error(error: unknown): ActorWebHttpResponseResult;
+export interface HttpResponse {
+  json(statusCode: number, body: unknown): HttpResponseResult;
+  ok(body: unknown): HttpResponseResult;
+  accepted(body: unknown): HttpResponseResult;
+  created(body: unknown): HttpResponseResult;
+  noContent(): HttpResponseResult;
+  badRequest(body: unknown): HttpResponseResult;
+  notFound(body: unknown): HttpResponseResult;
+  error(error: unknown): HttpResponseResult;
 }
 
-export interface ActorWebHttpContext<TTopology extends ActorWebTopology<ActorWebTopologyInput>> {
-  readonly runtime: ServedActorWebNode<TTopology>;
-  readonly actors: ActorWebHttpActors<TTopology>;
+export interface HttpContext<TTopology extends Topology<TopologyInput>> {
+  readonly runtime: ServedNode<TTopology>;
+  readonly actors: HttpActors<TTopology>;
 }
 
-export interface ActorWebBoundHttpContext<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
-  TActor extends ActorWebActorDescriptor,
-> extends ActorWebHttpContext<TTopology> {
-  readonly actor: ActorRef<ActorWebActorContext<TActor>, ActorWebActorMessage<TActor>>;
+export interface BoundHttpContext<
+  TTopology extends Topology<TopologyInput>,
+  TActor extends ActorDescriptor,
+> extends HttpContext<TTopology> {
+  readonly actor: ActorRef<ActorContextOf<TActor>, ActorMessageOf<TActor>>;
 }
 
-export type ActorWebHttpHandler<TTopology extends ActorWebTopology<ActorWebTopologyInput>> = (
-  request: ActorWebHttpRequest,
-  response: ActorWebHttpResponse,
-  actorWeb: ActorWebHttpContext<TTopology>
-) => ActorWebHttpResponseResult | undefined | Promise<ActorWebHttpResponseResult | undefined>;
+export type HttpHandler<TTopology extends Topology<TopologyInput>> = (
+  request: HttpRequest,
+  response: HttpResponse,
+  context: HttpContext<TTopology>
+) => HttpResponseResult | undefined | Promise<HttpResponseResult | undefined>;
 
-export type ActorWebBoundHttpHandler<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
-  TActor extends ActorWebActorDescriptor,
+export type BoundHttpHandler<
+  TTopology extends Topology<TopologyInput>,
+  TActor extends ActorDescriptor,
 > = (
-  request: ActorWebHttpRequest,
-  response: ActorWebHttpResponse,
-  actorWeb: ActorWebBoundHttpContext<TTopology, TActor>
-) => ActorWebHttpResponseResult | undefined | Promise<ActorWebHttpResponseResult | undefined>;
+  request: HttpRequest,
+  response: HttpResponse,
+  context: BoundHttpContext<TTopology, TActor>
+) => HttpResponseResult | undefined | Promise<HttpResponseResult | undefined>;
 
-export interface ActorWebHttpListenOptions {
+export interface HttpListenOptions {
   readonly host?: string;
   readonly port?: number;
 }
 
-export interface ServedActorWebHttp {
+export interface ServedHttp {
   readonly url: string;
   stop(): Promise<void>;
 }
 
-export interface ActorWebHttpRouter<TTopology extends ActorWebTopology<ActorWebTopologyInput>> {
-  get(path: string, handler: ActorWebHttpHandler<TTopology>): ActorWebHttpRouter<TTopology>;
-  post(path: string, handler: ActorWebHttpHandler<TTopology>): ActorWebHttpRouter<TTopology>;
-  put(path: string, handler: ActorWebHttpHandler<TTopology>): ActorWebHttpRouter<TTopology>;
-  patch(path: string, handler: ActorWebHttpHandler<TTopology>): ActorWebHttpRouter<TTopology>;
-  delete(path: string, handler: ActorWebHttpHandler<TTopology>): ActorWebHttpRouter<TTopology>;
+export interface HttpRouter<TTopology extends Topology<TopologyInput>> {
+  get(path: string, handler: HttpHandler<TTopology>): HttpRouter<TTopology>;
+  post(path: string, handler: HttpHandler<TTopology>): HttpRouter<TTopology>;
+  put(path: string, handler: HttpHandler<TTopology>): HttpRouter<TTopology>;
+  patch(path: string, handler: HttpHandler<TTopology>): HttpRouter<TTopology>;
+  delete(path: string, handler: HttpHandler<TTopology>): HttpRouter<TTopology>;
   for<TKey extends keyof TTopology['actors'] & string>(
     actor: TTopology['actors'][TKey]
-  ): ActorWebBoundHttpRouter<TTopology, TTopology['actors'][TKey]>;
-  listen(options?: ActorWebHttpListenOptions): Promise<ServedActorWebHttp>;
+  ): BoundHttpRouter<TTopology, TTopology['actors'][TKey]>;
+  listen(options?: HttpListenOptions): Promise<ServedHttp>;
 }
 
-export interface ActorWebBoundHttpRouter<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
-  TActor extends ActorWebActorDescriptor,
+export interface BoundHttpRouter<
+  TTopology extends Topology<TopologyInput>,
+  TActor extends ActorDescriptor,
 > {
   get(
     path: string,
-    handler: ActorWebBoundHttpHandler<TTopology, TActor>
-  ): ActorWebBoundHttpRouter<TTopology, TActor>;
+    handler: BoundHttpHandler<TTopology, TActor>
+  ): BoundHttpRouter<TTopology, TActor>;
   post(
     path: string,
-    handler: ActorWebBoundHttpHandler<TTopology, TActor>
-  ): ActorWebBoundHttpRouter<TTopology, TActor>;
+    handler: BoundHttpHandler<TTopology, TActor>
+  ): BoundHttpRouter<TTopology, TActor>;
   put(
     path: string,
-    handler: ActorWebBoundHttpHandler<TTopology, TActor>
-  ): ActorWebBoundHttpRouter<TTopology, TActor>;
+    handler: BoundHttpHandler<TTopology, TActor>
+  ): BoundHttpRouter<TTopology, TActor>;
   patch(
     path: string,
-    handler: ActorWebBoundHttpHandler<TTopology, TActor>
-  ): ActorWebBoundHttpRouter<TTopology, TActor>;
+    handler: BoundHttpHandler<TTopology, TActor>
+  ): BoundHttpRouter<TTopology, TActor>;
   delete(
     path: string,
-    handler: ActorWebBoundHttpHandler<TTopology, TActor>
-  ): ActorWebBoundHttpRouter<TTopology, TActor>;
+    handler: BoundHttpHandler<TTopology, TActor>
+  ): BoundHttpRouter<TTopology, TActor>;
   for<TKey extends keyof TTopology['actors'] & string>(
     actor: TTopology['actors'][TKey]
-  ): ActorWebBoundHttpRouter<TTopology, TTopology['actors'][TKey]>;
-  listen(options?: ActorWebHttpListenOptions): Promise<ServedActorWebHttp>;
+  ): BoundHttpRouter<TTopology, TTopology['actors'][TKey]>;
+  listen(options?: HttpListenOptions): Promise<ServedHttp>;
 }
 
-type Route<TTopology extends ActorWebTopology<ActorWebTopologyInput>> = {
-  readonly method: ActorWebHttpMethod;
+type Route<TTopology extends Topology<TopologyInput>> = {
+  readonly method: HttpMethod;
   readonly matcher: RouteMatcher;
-  readonly handler: ActorWebHttpHandler<TTopology>;
+  readonly handler: HttpHandler<TTopology>;
 };
 
 type RouteMatcher = {
@@ -139,7 +139,7 @@ type RouteMatcher = {
   match(pathname: string): Record<string, string> | null;
 };
 
-const handled: ActorWebHttpResponseResult = { handled: true };
+const handled: HttpResponseResult = { handled: true };
 
 function compileRoutePath(path: string): RouteMatcher {
   const names: string[] = [];
@@ -171,8 +171,8 @@ function compileRoutePath(path: string): RouteMatcher {
   };
 }
 
-function createResponse(response: ServerResponse): ActorWebHttpResponse {
-  const sendJson = (statusCode: number, body: unknown): ActorWebHttpResponseResult => {
+function createResponse(response: ServerResponse): HttpResponse {
+  const sendJson = (statusCode: number, body: unknown): HttpResponseResult => {
     response.writeHead(statusCode, {
       'access-control-allow-headers': 'content-type',
       'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
@@ -236,9 +236,9 @@ async function readBody(request: IncomingMessage): Promise<unknown> {
   return text;
 }
 
-function createActorAccess<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
-  runtime: ServedActorWebNode<TTopology>
-): ActorWebHttpActors<TTopology> {
+function createActorAccess<TTopology extends Topology<TopologyInput>>(
+  runtime: ServedNode<TTopology>
+): HttpActors<TTopology> {
   return new Proxy(
     {},
     {
@@ -255,76 +255,73 @@ function createActorAccess<TTopology extends ActorWebTopology<ActorWebTopologyIn
         return actor;
       },
     }
-  ) as ActorWebHttpActors<TTopology>;
+  ) as HttpActors<TTopology>;
 }
 
 function createBoundHandler<
-  TTopology extends ActorWebTopology<ActorWebTopologyInput>,
+  TTopology extends Topology<TopologyInput>,
   TKey extends keyof TTopology['actors'] & string,
 >(
-  runtime: ServedActorWebNode<TTopology>,
+  runtime: ServedNode<TTopology>,
   actor: TTopology['actors'][TKey],
-  handler: ActorWebBoundHttpHandler<TTopology, TTopology['actors'][TKey]>
-): ActorWebHttpHandler<TTopology> {
-  return (request, response, actorWeb) => {
+  handler: BoundHttpHandler<TTopology, TTopology['actors'][TKey]>
+): HttpHandler<TTopology> {
+  return (request, response, context) => {
     const actorRef = runtime.requireActor(actor.key as TKey);
 
     return handler(request, response, {
-      ...actorWeb,
+      ...context,
       actor: actorRef,
     });
   };
 }
 
-export function serveActorWebHttp<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
-  runtime: ServedActorWebNode<TTopology>
-): ActorWebHttpRouter<TTopology> {
+export function serveHttp<TTopology extends Topology<TopologyInput>>(
+  runtime: ServedNode<TTopology>
+): HttpRouter<TTopology> {
   const routes: Route<TTopology>[] = [];
   const actors = createActorAccess(runtime);
 
   const addRoute = (
-    method: ActorWebHttpMethod,
+    method: HttpMethod,
     path: string,
-    handler: ActorWebHttpHandler<TTopology>
-  ): ActorWebHttpRouter<TTopology> => {
+    handler: HttpHandler<TTopology>
+  ): HttpRouter<TTopology> => {
     routes.push({ method, matcher: compileRoutePath(path), handler });
     return router;
   };
 
-  const routeMethod = (method: ActorWebHttpMethod) => {
-    return (path: string, handler: ActorWebHttpHandler<TTopology>) =>
-      addRoute(method, path, handler);
+  const routeMethod = (method: HttpMethod) => {
+    return (path: string, handler: HttpHandler<TTopology>) => addRoute(method, path, handler);
   };
 
   const boundRouteMethod = <TKey extends keyof TTopology['actors'] & string>(
-    boundRouter: ActorWebBoundHttpRouter<TTopology, TTopology['actors'][TKey]>,
+    boundRouter: BoundHttpRouter<TTopology, TTopology['actors'][TKey]>,
     actor: TTopology['actors'][TKey],
-    method: ActorWebHttpMethod
+    method: HttpMethod
   ) => {
-    return (
-      path: string,
-      handler: ActorWebBoundHttpHandler<TTopology, TTopology['actors'][TKey]>
-    ) => addBoundRoute(boundRouter, method, path, createBoundHandler(runtime, actor, handler));
+    return (path: string, handler: BoundHttpHandler<TTopology, TTopology['actors'][TKey]>) =>
+      addBoundRoute(boundRouter, method, path, createBoundHandler(runtime, actor, handler));
   };
 
-  const addBoundRoute = <TActor extends ActorWebActorDescriptor>(
-    boundRouter: ActorWebBoundHttpRouter<TTopology, TActor>,
-    method: ActorWebHttpMethod,
+  const addBoundRoute = <TActor extends ActorDescriptor>(
+    boundRouter: BoundHttpRouter<TTopology, TActor>,
+    method: HttpMethod,
     path: string,
-    handler: ActorWebHttpHandler<TTopology>
-  ): ActorWebBoundHttpRouter<TTopology, TActor> => {
+    handler: HttpHandler<TTopology>
+  ): BoundHttpRouter<TTopology, TActor> => {
     routes.push({ method, matcher: compileRoutePath(path), handler });
     return boundRouter;
   };
 
-  const router: ActorWebHttpRouter<TTopology> = {
+  const router: HttpRouter<TTopology> = {
     get: routeMethod('GET'),
     post: routeMethod('POST'),
     put: routeMethod('PUT'),
     patch: routeMethod('PATCH'),
     delete: routeMethod('DELETE'),
     for(actor) {
-      const boundRouter = {} as ActorWebBoundHttpRouter<TTopology, typeof actor>;
+      const boundRouter = {} as BoundHttpRouter<TTopology, typeof actor>;
       Object.assign(boundRouter, {
         get: boundRouteMethod(boundRouter, actor, 'GET'),
         post: boundRouteMethod(boundRouter, actor, 'POST'),
@@ -336,7 +333,7 @@ export function serveActorWebHttp<TTopology extends ActorWebTopology<ActorWebTop
       });
       return boundRouter;
     },
-    async listen(options: ActorWebHttpListenOptions = {}) {
+    async listen(options: HttpListenOptions = {}) {
       const server = createServer((request, response) => {
         void handleRequest(runtime, actors, routes, request, response);
       });
@@ -366,9 +363,9 @@ export function serveActorWebHttp<TTopology extends ActorWebTopology<ActorWebTop
   return router;
 }
 
-async function handleRequest<TTopology extends ActorWebTopology<ActorWebTopologyInput>>(
-  runtime: ServedActorWebNode<TTopology>,
-  actors: ActorWebHttpActors<TTopology>,
+async function handleRequest<TTopology extends Topology<TopologyInput>>(
+  runtime: ServedNode<TTopology>,
+  actors: HttpActors<TTopology>,
   routes: readonly Route<TTopology>[],
   rawRequest: IncomingMessage,
   rawResponse: ServerResponse
@@ -392,7 +389,7 @@ async function handleRequest<TTopology extends ActorWebTopology<ActorWebTopology
       return;
     }
 
-    const request: ActorWebHttpRequest = {
+    const request: HttpRequest = {
       raw: rawRequest,
       method,
       path: url.pathname,
@@ -408,7 +405,7 @@ async function handleRequest<TTopology extends ActorWebTopology<ActorWebTopology
   }
 }
 
-function listen(server: Server, options: Required<ActorWebHttpListenOptions>): Promise<string> {
+function listen(server: Server, options: Required<HttpListenOptions>): Promise<string> {
   return new Promise((resolve, reject) => {
     const onListening = (): void => {
       server.off('error', onError);
@@ -430,3 +427,36 @@ function listen(server: Server, options: Required<ActorWebHttpListenOptions>): P
     server.listen(options.port, options.host);
   });
 }
+
+export type {
+  /** @deprecated Use BoundHttpContext instead. */
+  BoundHttpContext as ActorWebBoundHttpContext,
+  /** @deprecated Use BoundHttpHandler instead. */
+  BoundHttpHandler as ActorWebBoundHttpHandler,
+  /** @deprecated Use BoundHttpRouter instead. */
+  BoundHttpRouter as ActorWebBoundHttpRouter,
+  /** @deprecated Use HttpActors instead. */
+  HttpActors as ActorWebHttpActors,
+  /** @deprecated Use HttpContext instead. */
+  HttpContext as ActorWebHttpContext,
+  /** @deprecated Use HttpHandler instead. */
+  HttpHandler as ActorWebHttpHandler,
+  /** @deprecated Use HttpListenOptions instead. */
+  HttpListenOptions as ActorWebHttpListenOptions,
+  /** @deprecated Use HttpMethod instead. */
+  HttpMethod as ActorWebHttpMethod,
+  /** @deprecated Use HttpRequest instead. */
+  HttpRequest as ActorWebHttpRequest,
+  /** @deprecated Use HttpResponse instead. */
+  HttpResponse as ActorWebHttpResponse,
+  /** @deprecated Use HttpResponseResult instead. */
+  HttpResponseResult as ActorWebHttpResponseResult,
+  /** @deprecated Use HttpRouter instead. */
+  HttpRouter as ActorWebHttpRouter,
+  /** @deprecated Use ServedHttp instead. */
+  ServedHttp as ServedActorWebHttp,
+};
+export {
+  /** @deprecated Use serveHttp instead. */
+  serveHttp as serveActorWebHttp,
+};

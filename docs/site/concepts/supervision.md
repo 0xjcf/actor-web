@@ -27,7 +27,7 @@ supervisor({ node: 'local', strategy: 'one-for-one', children: ['pipeline', 'com
 ```
 
 Supervisor groups are wired into the runtime failure path by the node hosts:
-`serveNode` and `startActorWebNode` register the groups a node owns. The
+`serveNode` and `startNode` register the groups a node owns. The
 browser-local `startRuntime` client does not register groups yet — per-actor
 policies still apply there.
 
@@ -65,7 +65,7 @@ emitted with the supervisor key, the failed child, and the reason.
 - Trees are **one level deep** — `children` lists actors only; nested
   supervisors are not supported.
 - Children must be **co-located** on the supervisor's node;
-  `defineActorWebTopology` rejects cross-node children.
+  `defineTopology` rejects cross-node children.
 - **Parameterized children** (actors whose `id` is a function) spawn on
   demand, so a group cannot know its blast radius statically: they are skipped
   with a warning in `one-for-one` groups (each instance is still covered by
